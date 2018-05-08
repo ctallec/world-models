@@ -15,19 +15,25 @@ def generate_data(rollouts, data_dir):
     for i in range(rollouts):
         s = env.reset()
         env.env.viewer.window.dispatch_events()
+        a_rollout = []
         s_rollout = []
         r_rollout = []
+        d_rollout = []
         while True:
             action = env.action_space.sample()
             s, r, done, _ = env.step(action)
             env.env.viewer.window.dispatch_events()
+            a_rollout += [action]
             s_rollout += [s]
             r_rollout += [r]
+            d_rollout += [done]
             if done:
                 print("> End of rollout {}, {} frames...".format(i, len(s_rollout)))
                 np.savez(join(data_dir, 'rollout_{}'.format(i)),
                          observations=np.array(s_rollout),
-                         rewards=np.array(r_rollout))
+                         rewards=np.array(r_rollout),
+                         actions=np.array(a_rollout),
+                         terminals=np.array(d_rollout))
                 break
 
 if __name__ == "__main__":
