@@ -20,7 +20,7 @@ from itertools import chain
 parser = argparse.ArgumentParser(description='VAE Trainer')
 parser.add_argument('--batch-size', type=int, default=32, metavar='N',
                     help='input batch size for training (default: 128)')
-parser.add_argument('--epochs', type=int, default=100, metavar='N',
+parser.add_argument('--epochs', type=int, default=1000, metavar='N',
                     help='number of epochs to train (default: 10)')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
@@ -126,7 +126,7 @@ class VAE(nn.Module):
 
         
 model = VAE().to(device)
-optimizer = optim.SGD(model.parameters(), lr=1e-4)
+optimizer = optim.Adam(model.parameters())
 
 # Reconstruction + KL divergence losses summed over all elements and batch
 def loss_function(recon_x, x, mu, logsigma):
@@ -189,4 +189,4 @@ for epoch in range(1, args.epochs + 1):
         sample = torch.randn(64, 32).to(device)
         sample = model.decoder(sample).cpu()
         save_image(sample.view(64, 3, 64, 64),
-                   'results/sample_' + str(epoch) + '.png')
+                   '/data/titanic_1/users/lblier/vaecarracingresults/sample_' + str(epoch) + '.png')
