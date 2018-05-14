@@ -7,7 +7,7 @@ import numpy as np
 
 class RolloutSequenceDataset(torch.utils.data.Dataset): # pylint: disable=too-few-public-methods
     """ Encapsulate rollouts """
-    def __init__(self, root, transform):
+    def __init__(self, root, transform, train=True):
         self.transform = transform
         self.files = {}
 
@@ -19,6 +19,13 @@ class RolloutSequenceDataset(torch.utils.data.Dataset): # pylint: disable=too-fe
                     dfile = join(subdir, ssd)
                     self.files[i] = dfile
                     i += 1
+
+        self.files = list(self.files)
+
+        if train:
+            self.files = self.files[:-500]
+        else:
+            self.files = self.files[-500:]
 
     def __len__(self):
         return len(self.files)

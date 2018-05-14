@@ -25,7 +25,7 @@ class _MDRNNBase(nn.Module):
         self.gaussians = gaussians
 
         self.gmm_linear = nn.Linear(
-            hiddens, (2 * latents + 1) * gaussians)
+            hiddens, (2 * latents + 1) * gaussians + 2)
 
     def forward(self, *inputs):
         pass
@@ -51,8 +51,11 @@ class MDRNN(_MDRNNBase):
         mus = gmm_outs[:, :, :stride].view(seq_len, bs, self.gaussians, self.latents)
         sigmas = torch.exp(
             gmm_outs[:, :, stride:2 * stride].view(seq_len, bs, self.gaussians, self.latents))
-        pi = torch.softmax(gmm_outs[:, :, - self.gaussians:].view(seq_len, bs, self.gaussians, -1))
-        return mus, sigmas, pi
+        pi = torch.softmax(
+            gmm_outs[:, :, 2 * stride:3 * stride].view(seq_len, bs, self.gaussians, -1))
+        rs = gmm_outs[:, :, -2]
+        ds = gmm_outs[:, :, -1]
+        return mus, sigmas, pi, rs, ds
 
 class MDRNNCell(_MDRNNBase):
     """ MDRNN model for one step forward """
@@ -70,5 +73,7 @@ class MDRNNCell(_MDRNNBase):
         mus = out_full[:, :stride].view(-1, self.gaussians, self.latents)
         sigmas = torch.exp(
             out_full[:, stride:2 * stride].view(-1, self.gaussians, self.latents))
-        pi = torch.softmax(out_full[:, - self.gaussians:].view(-1, self.gaussians, 1))
-        return mus, sigmas, pi, next_hidden
+        pi = torch.softmax(out_full[:, 2 * stride:3 * stride].view(-1, self.gaussians, 1))
+        r = out_full[:, -2]
+        d = out_full[:, -1]
+        return mus, sigmas, pi, r, d, next_hidden
