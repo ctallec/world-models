@@ -22,7 +22,7 @@ class TestGMM(unittest.TestCase):
         pi = torch.Tensor([.2, .3, .5])
 
         cat_dist = Categorical(pi)
-        indices = cat_dist.sample_n(n_samples).long()
+        indices = cat_dist.sample((n_samples,)).long()
         rands = torch.randn(n_samples, 2)
 
         samples = means[indices] + rands * stds[indices]
@@ -40,7 +40,7 @@ class TestGMM(unittest.TestCase):
         model = _model(10)
         optimizer = torch.optim.SGD(model.parameters(), lr=1e-2)
 
-        for i in range(100000):
+        for i in range(10):
             batch = samples[torch.LongTensor(32).random_(0, n_samples)]
             m, s, p = model.forward()
             loss = gmm_loss(batch, m, s, p)
