@@ -152,6 +152,8 @@ for epoch in range(1, args.epochs + 1):
     best_filename = join(vae_dir, 'best.tar')
     filename = join(vae_dir, 'checkpoint.tar')
     is_best = not cur_best or test_loss < cur_best
+    if is_best:
+        cur_best = test_loss
 
     save_checkpoint({
         'epoch': epoch,
