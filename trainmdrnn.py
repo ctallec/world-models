@@ -52,7 +52,7 @@ if not exists(rnn_dir):
 
 mdrnn = MDRNN(LSIZE, 3, 256, 5)
 mdrnn.to(device)
-optimizer = torch.optim.Adam(mdrnn.parameters())
+optimizer = torch.optim.SGD(mdrnn.parameters(), lr=1e-3, momentum=.9)
 
 if exists(rnn_file) and not args.noreload:
     rnn_state = torch.load(rnn_file)
@@ -67,10 +67,10 @@ if exists(rnn_file) and not args.noreload:
 transform = transforms.Lambda(
     lambda x: np.transpose(x, (0, 3, 1, 2)) / 255)
 train_loader = DataLoader(
-    RolloutSequenceDataset('datasets/carracing', SEQ_LEN, transform, buffer_size=200),
+    RolloutSequenceDataset('datasets/carracing', SEQ_LEN, transform, buffer_size=25),
     batch_size=BSIZE, num_workers=8, shuffle=True)
 test_loader = DataLoader(
-    RolloutSequenceDataset('datasets/carracing', SEQ_LEN, transform, train=False, buffer_size=200),
+    RolloutSequenceDataset('datasets/carracing', SEQ_LEN, transform, train=False, buffer_size=10),
     batch_size=BSIZE, num_workers=8)
 
 def train(epoch): # pylint: disable=too-many-locals
@@ -106,9 +106,10 @@ def train(epoch): # pylint: disable=too-many-locals
                                            reward, terminal,
                                            latent_next_obs]]
         mus, sigmas, pi, rs, ds = mdrnn(action, latent_obs)
-        loss = gmm_loss(latent_next_obs, mus, sigmas, pi)
-        loss += f.binary_cross_entropy_with_logits(ds, terminal)
-        loss += f.mse_loss(rs, reward)
+        gmm = gmm_loss(latent_next_obs, mus, sigmas, pi)
+        bce = f.binary_cross_entropy_with_logits(ds, terminal)
+        mse = f.mse_loss(rs, reward)
+        loss = (LSIZE * gmm + bce + mse) / (LSIZE + 2)
 
         optimizer.zero_grad()
         loss.backward()
@@ -117,8 +118,8 @@ def train(epoch): # pylint: disable=too-many-locals
         cum_loss += loss.item()
 
         if i % log_step == log_step - 1:
-            pbar.set_postfix_str("loss={loss:10.6f} avg_loss={avg_loss:10.6f}".format(
-                loss=loss.item(), avg_loss=cum_loss / (i + 1)))
+            pbar.set_postfix_str("loss={loss:10.6f} avg_loss={avg_loss:10.6f} bce={bce:10.6f} gmm={gmm:10.6f} mse={mse:10.6f}".format(
+                loss=loss.item(), avg_loss=cum_loss / (i + 1), bce=bce, gmm=gmm, mse=mse))
             pbar.update(log_step * BSIZE)
     pbar.close()
 
@@ -154,14 +155,15 @@ def test(epoch): # pylint: disable=too-many-locals
                                                reward, terminal,
                                                latent_next_obs]]
             mus, sigmas, pi, rs, ds = mdrnn(action, latent_obs)
-            loss = gmm_loss(latent_next_obs, mus, sigmas, pi)
-            loss += f.binary_cross_entropy_with_logits(ds, terminal)
-            loss += f.mse_loss(rs, reward)
+            gmm = gmm_loss(latent_next_obs, mus, sigmas, pi)
+            bce = f.binary_cross_entropy_with_logits(ds, terminal)
+            mse = f.mse_loss(rs, reward)
+            loss = (LSIZE * gmm + bce + mse) / (LSIZE + 2)
 
             cum_loss += loss.item()
 
-            pbar.set_postfix_str("loss={loss:10.6f} avg_loss={avg_loss:10.6f}".format(
-                loss=loss.item(), avg_loss=cum_loss / (i + 1)))
+            pbar.set_postfix_str("loss={loss:10.6f} avg_loss={avg_loss:10.6f} bce={bce:10.6f} gmm={gmm:10.6f} mse={mse:10.6f}".format(
+                loss=loss.item(), avg_loss=cum_loss / (i + 1), bce=bce, gmm=gmm, mse=mse))
             pbar.update(log_step * BSIZE)
         pbar.close()
         return cum_loss / (i + 1)

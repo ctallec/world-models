@@ -10,10 +10,15 @@ from torch.distributions.normal import Normal
 def gmm_loss(batch, mus, sigmas, pi, dim=-2, reduce=True): # pylint: disable=too-many-arguments
     """ Computes the gmm loss """
     batch = batch.unsqueeze(dim)
+
     normal_dist = Normal(mus, sigmas)
-    n_probs = torch.exp(normal_dist.log_prob(batch))
-    probs = torch.sum(n_probs * pi, dim=dim)
-    log_prob = torch.log(probs)
+    g_log_probs = normal_dist.log_prob(batch)
+    max_log_probs = torch.max(g_log_probs, dim=dim)[0]
+
+    g_probs = torch.exp(g_log_probs)
+    probs = torch.sum(g_probs * pi, dim=dim)
+
+    log_prob = max_log_probs + torch.log(probs)
     if reduce:
         return - torch.mean(log_prob)
     return - log_prob
@@ -60,7 +65,7 @@ class MDRNN(_MDRNNBase):
 
         pi = gmm_outs[:, :, 2 * stride: 2 * stride + self.gaussians]
         pi = pi.view(seq_len, bs, self.gaussians, 1)
-        pi = f.softmax(pi, dim=-1)
+        pi = f.softmax(pi, dim=-2)
 
         rs = gmm_outs[:, :, -2]
 
@@ -77,7 +82,10 @@ class MDRNNCell(_MDRNNBase):
     def forward(self, action, latent, hidden): # pylint: disable=arguments-differ
         """ ONE STEP forward """
         in_al = torch.cat([action, latent], dim=1)
-        out_rnn, next_hidden = self.rnn(in_al, hidden)
+
+        next_hidden = self.rnn(in_al, hidden)
+        out_rnn = next_hidden[0]
+
         out_full = self.gmm_linear(out_rnn)
 
         stride = self.gaussians * self.latents
@@ -91,7 +99,7 @@ class MDRNNCell(_MDRNNBase):
 
         pi = out_full[:, 2 * stride:2 * stride + self.gaussians]
         pi = pi.view(-1, self.gaussians, 1)
-        pi = f.softmax(pi, dim=-1)
+        pi = f.softmax(pi, dim=-2)
 
         r = out_full[:, -2]
 

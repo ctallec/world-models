@@ -36,11 +36,11 @@ class TestGMM(unittest.TestCase):
             def forward(self, *inputs):
                 return self.means, torch.exp(self.pre_stds), f.softmax(self.pi, dim=1)
 
-        model = _model(10)
+        model = _model(3)
         optimizer = torch.optim.Adam(model.parameters())
 
-        for i in range(10000):
-            batch = samples[torch.LongTensor(32).random_(0, n_samples)]
+        for i in range(100000):
+            batch = samples[torch.LongTensor(128).random_(0, n_samples)]
             m, s, p = model.forward()
             loss = gmm_loss(batch, m, s, p)
             optimizer.zero_grad()
