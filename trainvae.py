@@ -5,12 +5,12 @@ from os import mkdir
 
 import torch
 import torch.utils.data
-from torch import nn, optim
+from torch import optim
 from torch.nn import functional as F
 from torchvision import transforms
 from torchvision.utils import save_image
 
-from models.vae import Encoder, Decoder
+from models.vae import VAE
 
 from utils import save_checkpoint
 from data.utils import RolloutObservationDataset
@@ -48,32 +48,16 @@ transform_test = transforms.Compose([
 ])
 
 dataset_train = RolloutObservationDataset('datasets/carracing',
-                                          'npz', transform_train, 200)
+                                          'npz', transform_train, train=True)
 dataset_test = RolloutObservationDataset('datasets/carracing',
-                                         'npz', transform_test, 10)
+                                         'npz', transform_test, train=False)
 train_loader = torch.utils.data.DataLoader(
     dataset_train, batch_size=args.batch_size, shuffle=True, num_workers=2)
 test_loader = torch.utils.data.DataLoader(
     dataset_test, batch_size=args.batch_size, shuffle=True, num_workers=2)
 
 
-class VAE(nn.Module):
-    """ Variational Autoencoder """
-    def __init__(self):
-        super(VAE, self).__init__()
-        self.encoder = Encoder(3, 32)
-        self.decoder = Decoder(3, 32)
-
-    def forward(self, x): # pylint: disable=arguments-differ
-        mu, logsigma = self.encoder(x)
-        sigma = logsigma.exp()
-        eps = torch.randn_like(sigma)
-        z = eps.mul(sigma).add_(mu)
-
-        recon_x = self.decoder(z)
-        return recon_x, mu, logsigma
-
-model = VAE().to(device)
+model = VAE(3, 32).to(device)
 optimizer = optim.Adam(model.parameters())
 
 # Reconstruction + KL divergence losses summed over all elements and batch
@@ -92,7 +76,7 @@ def loss_function(recon_x, x, mu, logsigma):
 def train(epoch):
     """ One training epoch """
     model.train()
-    dataset_train.load_buffer()
+    dataset_train.load_next_buffer()
     train_loss = 0
     for batch_idx, data in enumerate(train_loader):
         data = data.to(device)
@@ -115,7 +99,7 @@ def train(epoch):
 def test():
     """ One test epoch """
     model.eval()
-    dataset_test.load_buffer()
+    dataset_test.load_next_buffer()
     test_loss = 0
     with torch.no_grad():
         for data in test_loader:

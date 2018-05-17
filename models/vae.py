@@ -3,6 +3,7 @@
 Variational encoder model, used as a visual model
 for our model of the world.
 """
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -24,13 +25,11 @@ class Decoder(nn.Module):
         x = F.relu(self.fc1(x))
         x = x.unsqueeze(-1).unsqueeze(-1)
         x = F.relu(self.deconv1(x))
-        x = F.relu(self.deconv2(x)) 
+        x = F.relu(self.deconv2(x))
         x = F.relu(self.deconv3(x))
         reconstruction = F.sigmoid(self.deconv4(x))
         return reconstruction
 
-
-    
 class Encoder(nn.Module):
     """ VAE encoder """
     def __init__(self, img_channels, latent_size):
@@ -59,4 +58,20 @@ class Encoder(nn.Module):
         logsigma = self.fc_logsigma(x)
 
         return mu, logsigma
-        
+
+class VAE(nn.Module):
+    """ Variational Autoencoder """
+    def __init__(self, img_channels, latent_size):
+        super(VAE, self).__init__()
+        self.encoder = Encoder(img_channels, latent_size)
+        self.decoder = Decoder(img_channels, latent_size)
+
+    def forward(self, x): # pylint: disable=arguments-differ
+        mu, logsigma = self.encoder(x)
+        sigma = logsigma.exp()
+        eps = torch.randn_like(sigma)
+        z = eps.mul(sigma).add_(mu)
+
+        recon_x = self.decoder(z)
+        return recon_x, mu, logsigma
+

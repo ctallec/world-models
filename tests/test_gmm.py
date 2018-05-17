@@ -1,6 +1,5 @@
 """ Test gmm loss """
 import unittest
-import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.nn.functional as f
@@ -38,16 +37,16 @@ class TestGMM(unittest.TestCase):
                 return self.means, torch.exp(self.pre_stds), f.softmax(self.pi, dim=1)
 
         model = _model(10)
-        optimizer = torch.optim.SGD(model.parameters(), lr=1e-2)
+        optimizer = torch.optim.Adam(model.parameters())
 
-        for i in range(10):
+        for i in range(10000):
             batch = samples[torch.LongTensor(32).random_(0, n_samples)]
             m, s, p = model.forward()
             loss = gmm_loss(batch, m, s, p)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            if i % 1000 == 999:
+            if i % 100 == 99:
                 print(loss.item())
                 print(m)
                 print(s)

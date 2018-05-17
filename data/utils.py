@@ -3,6 +3,7 @@ from os import listdir
 from os.path import join, isdir
 from tqdm import tqdm
 import torch
+import torch.utils.data
 import numpy as np
 
 class _RolloutDataset(torch.utils.data.Dataset): # pylint: disable=too-few-public-methods
