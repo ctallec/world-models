@@ -33,7 +33,7 @@ class SimulatedCarracing(gym.Env): # pylint: disable=too-many-instance-attribute
 
         # load VAE
         vae = VAE(3, self.LSIZE)
-        vae_state = torch.load(vae_file) #, map_location=lambda storage, location: 'cpu')
+        vae_state = torch.load(vae_file, map_location=lambda storage, location: storage)
         print("Loading VAE at epoch {}, "
               "with test error {}...".format(
                   vae_state['epoch'], vae_state['precision']))
@@ -42,7 +42,7 @@ class SimulatedCarracing(gym.Env): # pylint: disable=too-many-instance-attribute
 
         # load MDRNN
         self._rnn = MDRNNCell(32, 3, self.HSIZE, 5)
-        rnn_state = torch.load(rnn_file) #, map_location=lambda storage, location: 'cpu')
+        rnn_state = torch.load(rnn_file, map_location=lambda storage, location: storage)
         print("Loading MDRNN at epoch {}, "
               "with test error {}...".format(
                   rnn_state['epoch'], rnn_state['precision']))
@@ -76,6 +76,7 @@ class SimulatedCarracing(gym.Env): # pylint: disable=too-many-instance-attribute
             np_obs = self._obs.numpy()
             np_obs = np.clip(np_obs, 0, 1) * 255
             np_obs = np.transpose(np_obs, (0, 2, 3, 1))
+            np_obs = np_obs.squeeze()
             np_obs = np_obs.astype(np.uint8)
 
             return np_obs, r.item(), d.item() > 0
