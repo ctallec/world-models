@@ -3,6 +3,7 @@ import unittest
 import torch
 import torch.nn as nn
 import torch.nn.functional as f
+from tqdm import tqdm
 from torch.distributions.categorical import Categorical
 from models.mdrnn import gmm_loss
 
@@ -31,7 +32,7 @@ class TestGMM(unittest.TestCase):
                 super().__init__()
                 self.means = nn.Parameter(torch.Tensor(1, gaussians, 2).normal_())
                 self.pre_stds = nn.Parameter(torch.Tensor(1, gaussians, 2).normal_())
-                self.pi = nn.Parameter(torch.Tensor(1, gaussians, 1).normal_())
+                self.pi = nn.Parameter(torch.Tensor(1, gaussians).normal_())
 
             def forward(self, *inputs):
                 return self.means, torch.exp(self.pre_stds), f.softmax(self.pi, dim=1)
@@ -39,15 +40,22 @@ class TestGMM(unittest.TestCase):
         model = _model(3)
         optimizer = torch.optim.Adam(model.parameters())
 
-        for i in range(100000):
+        iterations = 100000
+        log_step = iterations // 10
+        pbar = tqdm(total=iterations)
+        cum_loss = 0
+        for i in range(iterations):
             batch = samples[torch.LongTensor(128).random_(0, n_samples)]
             m, s, p = model.forward()
             loss = gmm_loss(batch, m, s, p)
+            cum_loss += loss.item()
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            if i % 100 == 99:
-                print(loss.item())
+            pbar.set_postfix_str("avg_loss={:10.6f}".format(
+                cum_loss / (i + 1)))
+            pbar.update(1)
+            if i % log_step == log_step - 1:
                 print(m)
                 print(s)
                 print(p)

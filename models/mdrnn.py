@@ -7,18 +7,20 @@ import torch.nn as nn
 import torch.nn.functional as f
 from torch.distributions.normal import Normal
 
-def gmm_loss(batch, mus, sigmas, pi, dim=-2, reduce=True): # pylint: disable=too-many-arguments
+def gmm_loss(batch, mus, sigmas, pi, reduce=True): # pylint: disable=too-many-arguments
     """ Computes the gmm loss """
-    batch = batch.unsqueeze(dim)
+    batch = batch.unsqueeze(-2)
 
     normal_dist = Normal(mus, sigmas)
     g_log_probs = normal_dist.log_prob(batch)
-    max_log_probs = torch.max(g_log_probs, dim=dim)[0]
+    g_log_probs = torch.sum(g_log_probs, dim=-1)
+    max_log_probs = torch.max(g_log_probs, dim=-1, keepdim=True)[0]
+    g_log_probs = g_log_probs - max_log_probs
 
     g_probs = torch.exp(g_log_probs)
-    probs = torch.sum(g_probs * pi, dim=dim)
+    probs = torch.sum(g_probs * pi, dim=-1)
 
-    log_prob = max_log_probs + torch.log(probs)
+    log_prob = max_log_probs.squeeze() + torch.log(probs)
     if reduce:
         return - torch.mean(log_prob)
     return - log_prob
@@ -64,7 +66,7 @@ class MDRNN(_MDRNNBase):
         sigmas = torch.exp(sigmas)
 
         pi = gmm_outs[:, :, 2 * stride: 2 * stride + self.gaussians]
-        pi = pi.view(seq_len, bs, self.gaussians, 1)
+        pi = pi.view(seq_len, bs, self.gaussians)
         pi = f.softmax(pi, dim=-2)
 
         rs = gmm_outs[:, :, -2]
@@ -98,7 +100,7 @@ class MDRNNCell(_MDRNNBase):
         sigmas = torch.exp(sigmas)
 
         pi = out_full[:, 2 * stride:2 * stride + self.gaussians]
-        pi = pi.view(-1, self.gaussians, 1)
+        pi = pi.view(-1, self.gaussians)
         pi = f.softmax(pi, dim=-2)
 
         r = out_full[:, -2]

@@ -1,5 +1,6 @@
 """ Recurrent model training """
 import argparse
+from functools import partial
 from os.path import join, exists
 from os import mkdir
 import torch
@@ -29,7 +30,6 @@ BSIZE = 8
 SEQ_LEN = 32
 SIZE = 96
 RED_SIZE = 64
-log_step = 10
 epochs = 30
 
 # Loading VAE
@@ -52,7 +52,7 @@ if not exists(rnn_dir):
 
 mdrnn = MDRNN(LSIZE, 3, 256, 5)
 mdrnn.to(device)
-optimizer = torch.optim.SGD(mdrnn.parameters(), lr=1e-3, momentum=.9)
+optimizer = torch.optim.Adam(mdrnn.parameters(), lr=1e-2)
 
 if exists(rnn_file) and not args.noreload:
     rnn_state = torch.load(rnn_file)
@@ -67,106 +67,94 @@ if exists(rnn_file) and not args.noreload:
 transform = transforms.Lambda(
     lambda x: np.transpose(x, (0, 3, 1, 2)) / 255)
 train_loader = DataLoader(
-    RolloutSequenceDataset('datasets/carracing', SEQ_LEN, transform, buffer_size=25),
+    RolloutSequenceDataset('datasets/carracing', SEQ_LEN, transform, buffer_size=100),
     batch_size=BSIZE, num_workers=8, shuffle=True)
 test_loader = DataLoader(
-    RolloutSequenceDataset('datasets/carracing', SEQ_LEN, transform, train=False, buffer_size=10),
+    RolloutSequenceDataset('datasets/carracing', SEQ_LEN, transform, train=False, buffer_size=25),
     batch_size=BSIZE, num_workers=8)
 
-def train(epoch): # pylint: disable=too-many-locals
-    """ One epoch of training """
-    mdrnn.train()
-    train_loader.dataset.load_next_buffer()
+def to_latent(obs, next_obs):
+    """ Transform observations to latent space """
+    with torch.no_grad():
+        obs, next_obs = [
+            f.upsample(x.view(-1, 3, SIZE, SIZE), size=RED_SIZE,
+                       mode='bilinear', align_corners=True)
+            for x in (obs, next_obs)]
+
+        (obs_mu, obs_logsigma), (next_obs_mu, next_obs_logsigma) = [
+            vae(x)[1:] for x in (obs, next_obs)]
+
+        latent_obs, latent_next_obs = [
+            (x_mu + x_logsigma.exp() * torch.randn_like(x_mu)).view(BSIZE, SEQ_LEN, LSIZE)
+            for x_mu, x_logsigma in
+            [(obs_mu, obs_logsigma), (next_obs_mu, next_obs_logsigma)]]
+    return latent_obs, latent_next_obs
+
+def get_loss(latent_obs, action, reward, terminal, latent_next_obs):
+    """ Computes losses """
+    latent_obs, action,\
+        reward, terminal,\
+        latent_next_obs = [arr.transpose(1, 0)
+                           for arr in [latent_obs, action,
+                                       reward, terminal,
+                                       latent_next_obs]]
+    mus, sigmas, pi, rs, ds = mdrnn(action, latent_obs)
+    gmm = gmm_loss(latent_next_obs, mus, sigmas, pi)
+    bce = f.binary_cross_entropy_with_logits(ds, terminal)
+    mse = f.mse_loss(rs, reward)
+    loss = (gmm + bce + mse) / (LSIZE + 2)
+    return dict(gmm=gmm, bce=bce, mse=mse, loss=loss)
+
+def data_pass(epoch, train): # pylint: disable=too-many-locals
+    """ One pass through the data """
+    if train:
+        mdrnn.train()
+        loader = train_loader
+    else:
+        mdrnn.eval()
+        loader = test_loader
+
+    loader.dataset.load_next_buffer()
 
     cum_loss = 0
-    pbar = tqdm(total=len(train_loader.dataset), desc="Epoch {}".format(epoch))
+    cum_gmm = 0
+    cum_bce = 0
+    cum_mse = 0
 
-    for i, data in enumerate(train_loader):
+    pbar = tqdm(total=len(loader.dataset), desc="Epoch {}".format(epoch))
+
+    for i, data in enumerate(loader):
         obs, action, reward, terminal, next_obs = [arr.to(device) for arr in data]
 
         # transform obs
-        with torch.no_grad():
-            obs, next_obs = [
-                f.upsample(x.view(-1, 3, SIZE, SIZE), size=RED_SIZE,
-                           mode='bilinear', align_corners=True)
-                for x in (obs, next_obs)]
+        latent_obs, latent_next_obs = to_latent(obs, next_obs)
 
-            (obs_mu, obs_logsigma), (next_obs_mu, next_obs_logsigma) = [
-                vae(x)[1:] for x in (obs, next_obs)]
+        if train:
+            losses = get_loss(latent_obs, action, reward,
+                              terminal, latent_next_obs)
 
-            latent_obs, latent_next_obs = [
-                (x_mu + x_logsigma.exp() * torch.randn_like(x_mu)).view(BSIZE, SEQ_LEN, LSIZE)
-                for x_mu, x_logsigma in
-                [(obs_mu, obs_logsigma), (next_obs_mu, next_obs_logsigma)]]
+            optimizer.zero_grad()
+            losses['loss'].backward()
+            optimizer.step()
+        else:
+            with torch.no_grad():
+                losses = get_loss(latent_obs, action, reward,
+                                  terminal, latent_next_obs)
 
-        latent_obs, action,\
-            reward, terminal,\
-            latent_next_obs = [arr.transpose(1, 0)
-                               for arr in [latent_obs, action,
-                                           reward, terminal,
-                                           latent_next_obs]]
-        mus, sigmas, pi, rs, ds = mdrnn(action, latent_obs)
-        gmm = gmm_loss(latent_next_obs, mus, sigmas, pi)
-        bce = f.binary_cross_entropy_with_logits(ds, terminal)
-        mse = f.mse_loss(rs, reward)
-        loss = (LSIZE * gmm + bce + mse) / (LSIZE + 2)
+        cum_loss += losses['loss'].item()
+        cum_gmm += losses['gmm'].item()
+        cum_bce += losses['bce'].item()
+        cum_mse += losses['mse'].item()
 
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        cum_loss += loss.item()
-
-        if i % log_step == log_step - 1:
-            pbar.set_postfix_str("loss={loss:10.6f} avg_loss={avg_loss:10.6f} bce={bce:10.6f} gmm={gmm:10.6f} mse={mse:10.6f}".format(
-                loss=loss.item(), avg_loss=cum_loss / (i + 1), bce=bce, gmm=gmm, mse=mse))
-            pbar.update(log_step * BSIZE)
+        pbar.set_postfix_str("loss={loss:10.6f} bce={bce:10.6f} "
+                             "gmm={gmm:10.6f} mse={mse:10.6f}".format(
+                                 loss=cum_loss / (i + 1), bce=cum_bce / (i + 1),
+                                 gmm=cum_gmm / LSIZE / (i + 1), mse=cum_mse / (i + 1)))
+        pbar.update(BSIZE)
     pbar.close()
 
-def test(epoch): # pylint: disable=too-many-locals
-    """ One epoch of training """
-    mdrnn.eval()
-    test_loader.dataset.load_next_buffer()
-
-    cum_loss = 0
-    pbar = tqdm(total=len(test_loader.dataset), desc="Test, epoch {}".format(epoch))
-
-    for i, data in enumerate(train_loader):
-        obs, action, reward, terminal, next_obs = [arr.to(device) for arr in data]
-
-        # transform obs
-        with torch.no_grad():
-            obs, next_obs = [
-                f.upsample(x.view(-1, 3, SIZE, SIZE), size=RED_SIZE, mode='bilinear')
-                for x in (obs, next_obs)]
-
-            (obs_mu, obs_logsigma), (next_obs_mu, next_obs_logsigma) = [
-                vae(x)[1:] for x in (obs, next_obs)]
-
-            latent_obs, latent_next_obs = [
-                (x_mu + x_logsigma.exp() * torch.randn_like(x_mu)).view(BSIZE, SEQ_LEN, LSIZE)
-                for x_mu, x_logsigma in
-                [(obs_mu, obs_logsigma), (next_obs_mu, next_obs_logsigma)]]
-
-            latent_obs, action,\
-                reward, terminal,\
-                latent_next_obs = [arr.transpose(1, 0)
-                                   for arr in [latent_obs, action,
-                                               reward, terminal,
-                                               latent_next_obs]]
-            mus, sigmas, pi, rs, ds = mdrnn(action, latent_obs)
-            gmm = gmm_loss(latent_next_obs, mus, sigmas, pi)
-            bce = f.binary_cross_entropy_with_logits(ds, terminal)
-            mse = f.mse_loss(rs, reward)
-            loss = (LSIZE * gmm + bce + mse) / (LSIZE + 2)
-
-            cum_loss += loss.item()
-
-            pbar.set_postfix_str("loss={loss:10.6f} avg_loss={avg_loss:10.6f} bce={bce:10.6f} gmm={gmm:10.6f} mse={mse:10.6f}".format(
-                loss=loss.item(), avg_loss=cum_loss / (i + 1), bce=bce, gmm=gmm, mse=mse))
-            pbar.update(log_step * BSIZE)
-        pbar.close()
-        return cum_loss / (i + 1)
+train = partial(data_pass, train=True)
+test = partial(data_pass, train=False)
 
 for e in range(epochs):
     cur_best = None
