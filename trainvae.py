@@ -48,9 +48,9 @@ transform_test = transforms.Compose([
 ])
 
 dataset_train = RolloutObservationDataset('datasets/carracing',
-                                          'npz', transform_train, train=True)
+                                          transform_train, train=True)
 dataset_test = RolloutObservationDataset('datasets/carracing',
-                                         'npz', transform_test, train=False)
+                                         transform_test, train=False)
 train_loader = torch.utils.data.DataLoader(
     dataset_train, batch_size=args.batch_size, shuffle=True, num_workers=2)
 test_loader = torch.utils.data.DataLoader(

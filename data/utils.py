@@ -30,6 +30,7 @@ class _RolloutDataset(torch.utils.data.Dataset): # pylint: disable=too-few-publi
         """ Loads next buffer """
         self._buffer_fnames = self._files[self._buffer_index:self._buffer_index + self._buffer_size]
         self._buffer_index += self._buffer_size
+        self._buffer_index = self._buffer_index % len(self._files)
         self._buffer = []
         self._cum_size = [0]
 
