@@ -2,8 +2,6 @@
 import math
 import numpy as np
 import matplotlib.pyplot as plt
-import gym
-from gym.envs.box2d.car_racing import FPS
 
 def plot_rollout():
     """ Plot a rollout """
@@ -18,12 +16,22 @@ def plot_rollout():
 
     dataloader.dataset.load_next_buffer()
 
-    monitor = plt.imshow(np.zeros((64, 64, 3)))
+    # setting up subplots
+    plt.subplot(2, 2, 1)
+    monitor_obs = plt.imshow(np.zeros((64, 64, 3)))
+    plt.subplot(2, 2, 2)
+    monitor_next_obs = plt.imshow(np.zeros((64, 64, 3)))
+    plt.subplot(2, 2, 3)
+    monitor_diff = plt.imshow(np.zeros((64, 64, 3)))
+
     for data in dataloader:
         obs_seq = data[0].numpy().squeeze()
         action_seq = data[1].numpy().squeeze()
-        for obs, action in zip(obs_seq, action_seq):
-            monitor.set_data(obs)
+        next_obs_seq = data[-1].numpy().squeeze()
+        for obs, action, next_obs in zip(obs_seq, action_seq, next_obs_seq):
+            monitor_obs.set_data(obs)
+            monitor_next_obs.set_data(next_obs)
+            monitor_diff.set_data(next_obs - obs)
             print(action)
             plt.pause(.01)
         break
@@ -43,6 +51,8 @@ def sample_continuous_policy(action_space, seq_len, dt):
 
 def plot_continuous_policy():
     """ Plot a rollout using a continuous policy """
+    import gym
+    from gym.envs.box2d.car_racing import FPS
     episode_length = 1000
     env = gym.make('CarRacing-v0')
     env.reset()
@@ -54,4 +64,5 @@ def plot_continuous_policy():
         env.render()
 
 if __name__ == '__main__':
+    plot_rollout()
     plot_continuous_policy()
