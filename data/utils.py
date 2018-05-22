@@ -1,4 +1,5 @@
 """ Some data loading utilities """
+from bisect import bisect
 from os import listdir
 from os.path import join, isdir
 from tqdm import tqdm
@@ -54,20 +55,9 @@ class _RolloutDataset(torch.utils.data.Dataset): # pylint: disable=too-few-publi
 
     def __getitem__(self, i):
         # binary search through cum_size
-        low = 0
-        high = len(self._cum_size)
-        while low < high:
-            mid = (low + high) // 2
-            if self._cum_size[mid] > i:
-                high = mid
-            else:
-                cur = mid
-                low = mid + 1
-
-        # extract data
-        seq_index = i - self._cum_size[cur]
-        data = self._buffer[cur]
-
+        file_index = bisect(self._cum_size, i) - 1
+        seq_index = i - self._cum_size[file_index]
+        data = self._buffer[file_index]
         return self._get_data(data, seq_index)
 
     def _get_data(self, data, seq_index):
