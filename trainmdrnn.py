@@ -152,6 +152,7 @@ def data_pass(epoch, train): # pylint: disable=too-many-locals
                                  gmm=cum_gmm / LSIZE / (i + 1), mse=cum_mse / (i + 1)))
         pbar.update(BSIZE)
     pbar.close()
+    return cum_loss * BSIZE / len(loader.dataset)
 
 train = partial(data_pass, train=True)
 test = partial(data_pass, train=False)
