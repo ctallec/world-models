@@ -55,11 +55,24 @@ class SimulatedCarracing(gym.Env): # pylint: disable=too-many-instance-attribute
 
         # obs
         self._obs = None
+        self._visual_obs = None
+
+        # rendering
+        self.monitor = None
+        self.figure = None
 
     def reset(self):
         """ Resetting """
+        import matplotlib.pyplot as plt
         self._lstate = torch.randn(1, self.LSIZE)
         self._hstate = 2 * [torch.zeros(1, self.HSIZE)]
+
+        # also reset monitor
+        if not self.monitor:
+            self.figure = plt.figure()
+            self.monitor = plt.imshow(
+                np.zeros((self.STATE_H, self.STATE_W, 3),
+                         dtype=np.uint8))
 
     def step(self, action):
         """ One step forward """
@@ -78,5 +91,52 @@ class SimulatedCarracing(gym.Env): # pylint: disable=too-many-instance-attribute
             np_obs = np.transpose(np_obs, (0, 2, 3, 1))
             np_obs = np_obs.squeeze()
             np_obs = np_obs.astype(np.uint8)
+            self._visual_obs = np_obs
 
             return np_obs, r.item(), d.item() > 0
+
+    def render(self): # pylint: disable=arguments-differ
+        """ Rendering """
+        import matplotlib.pyplot as plt
+        if not self.monitor:
+            self.figure = plt.figure()
+            self.monitor = plt.imshow(
+                np.zeros((self.STATE_H, self.STATE_W, 3),
+                         dtype=np.uint8))
+        self.monitor.set_data(self._visual_obs)
+        plt.pause(.01)
+
+if __name__ == '__main__':
+    env = SimulatedCarracing('logs/exp0')
+    env.reset()
+    action = np.array([0., 0., 0.])
+
+    def on_key_press(event):
+        """ Defines key pressed behavior """
+        if event.key == 'up':
+            action[1] = 1
+        if event.key == 'down':
+            action[2] = .8
+        if event.key == 'left':
+            action[0] = -1
+        if event.key == 'right':
+            action[0] = 1
+
+    def on_key_release(event):
+        """ Defines key pressed behavior """
+        if event.key == 'up':
+            action[1] = 0
+        if event.key == 'down':
+            action[2] = 0
+        if event.key == 'left' and action[0] == -1:
+            action[0] = 0
+        if event.key == 'right' and action[0] == 1:
+            action[0] = 0
+
+    env.figure.canvas.mpl_connect('key_press_event', on_key_press)
+    env.figure.canvas.mpl_connect('key_release_event', on_key_release)
+    while True:
+        _, _, done = env.step(action)
+        env.render()
+        if done:
+            break
