@@ -17,4 +17,4 @@ device = torch.device('cpu')
 
 generator = RolloutGenerator(args.logdir, device, 1000)
 
-generator.rollout(None, render=True)
+generator.rollout(None)

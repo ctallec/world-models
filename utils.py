@@ -108,7 +108,7 @@ class RolloutGenerator(object):
         _, _, _, _, _, next_hidden = self.mdrnn(action, latent_mu, hidden)
         return action.squeeze().cpu().numpy(), next_hidden
 
-    def rollout(self, params, render=False):
+    def rollout(self, params):
         """ One rollout """
         # copy params into the controller
         if params:
@@ -122,14 +122,10 @@ class RolloutGenerator(object):
         cumulative = 0
         i = 0
         while True:
+            self.env.render()
             obs = transform(obs).unsqueeze(0).to(self.device)
             action, hidden = self.get_action_and_transition(obs, hidden)
             obs, reward, done, _ = self.env.step(action)
-            if render:
-                import matplotlib.pyplot as plt
-                plt.imshow(obs)
-                plt.pause(.1)
-                input()
             cumulative += reward
             if done or i > self.time_limit:
                 return - cumulative
