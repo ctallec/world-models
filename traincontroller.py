@@ -12,13 +12,13 @@ from os import mkdir, unlink, listdir, getpid
 from time import sleep
 from torch.multiprocessing import Process, Queue
 import torch
-import torch.nn as nn
 import cma
-import gym
-from models import VAE, MDRNNCell
-from torchvision import transforms
+from models import Controller
 from tqdm import tqdm
 import numpy as np
+from utils import RolloutGenerator, ASIZE, RSIZE, LSIZE
+from utils import load_parameters
+from utils import flatten_parameters, unflatten_parameters
 
 # parsing
 parser = argparse.ArgumentParser()
@@ -51,119 +51,6 @@ if not exists(ctrl_dir):
     mkdir(ctrl_dir)
 
 ################################################################################
-#                           Sub functions                                      #
-################################################################################
-
-transform = transforms.Compose([
-    transforms.ToPILImage(),
-    transforms.Resize((64, 64)),
-    transforms.ToTensor()
-])
-
-class Controller(nn.Module):
-    """ Controller """
-    def __init__(self, latents, recurrents, actions):
-        super().__init__()
-        self.fc = nn.Linear(latents + recurrents, actions)
-
-    def forward(self, *inputs):
-        cat_in = torch.cat(inputs, dim=1)
-        return self.fc(cat_in)
-
-def flatten_parameters(params):
-    """ Flattening parameters """
-    return torch.cat([p.detach().view(-1) for p in params], dim=0).cpu().numpy()
-
-def unflatten_parameters(params, example, device):
-    """ unflatten parameters """
-    params = torch.Tensor(params).to(device)
-    idx = 0
-    unflattened = []
-    for e_p in example:
-        unflattened += [params[idx:idx + e_p.numel()].view(e_p.size())]
-        idx += e_p.numel()
-    return unflattened
-
-def load_parameters(params, controller):
-    """ Load flattened parameters into controller """
-    proto = next(controller.parameters())
-    params = unflatten_parameters(
-        params, controller.parameters(), proto.device)
-
-    for p, p_0 in zip(controller.parameters(), params):
-        p.data.copy_(p_0)
-
-class RolloutGenerator(object):
-    """
-    Encapsulate everything that is needed to
-    generate rollouts.
-    """
-    def __init__(self, mdir, device):
-        """ Build vae, rnn, controller and environment. """
-        # Loading world model and vae
-        vae_file, rnn_file, ctrl_file = \
-            [join(mdir, m, 'best.tar') for m in ['vae', 'mdrnn', 'ctrl']]
-
-        assert exists(vae_file) and exists(rnn_file),\
-            "Either vae or mdrnn is untrained."
-
-        vae_state, rnn_state = [
-            torch.load(fname, map_location={'cuda:0': str(device)})
-            for fname in (vae_file, rnn_file)]
-
-        for m, s in (('VAE', vae_state), ('MDRNN', rnn_state)):
-            print("Loading {} at epoch {} "
-                  "with test loss {}".format(
-                      m, s['epoch'], s['precision']))
-
-        self.vae = VAE(3, LSIZE).to(device)
-        self.vae.load_state_dict(vae_state['state_dict'])
-
-        self.mdrnn = MDRNNCell(LSIZE, ASIZE, RSIZE, 5).to(device)
-        self.mdrnn.load_state_dict(
-            {k.strip('_l0'): v for k, v in rnn_state['state_dict'].items()})
-
-        self.controller = Controller(LSIZE, RSIZE, ASIZE).to(device)
-
-        # load controller if it was previously saved
-        if exists(ctrl_file):
-            ctrl_state = torch.load(ctrl_file, map_location={'cuda:0': str(device)})
-            print("Loading Controller with reward {}".format(
-                ctrl_state['reward']))
-            self.controller.load_state_dict(ctrl_state['state_dict'])
-
-        self.env = gym.make('CarRacing-v0')
-        self.device = device
-
-    def get_action_and_transition(self, obs, hidden):
-        """ Gets action and transition """
-        _, latent_mu, _ = self.vae(obs)
-        action = self.controller(latent_mu, hidden[0])
-        _, _, _, _, _, next_hidden = self.mdrnn(action, latent_mu, hidden)
-        return action.squeeze().cpu().numpy(), next_hidden
-
-    def rollout(self, params):
-        """ One rollout """
-        # copy params into the controller
-        load_parameters(params, self.controller)
-
-        obs = self.env.reset()
-        hidden = [
-            torch.zeros(1, RSIZE).to(self.device)
-            for _ in range(2)]
-
-        cumulative = 0
-        i = 0
-        while True:
-            obs = transform(obs).unsqueeze(0).to(self.device)
-            action, hidden = self.get_action_and_transition(obs, hidden)
-            obs, reward, done, _ = self.env.step(action)
-            cumulative += reward
-            if done or i > time_limit:
-                return - cumulative
-            i += 1
-
-################################################################################
 #                           Thread routines                                    #
 ################################################################################
 def slave_routine(p_queue, r_queue, e_queue, p_index):
@@ -182,7 +69,7 @@ def slave_routine(p_queue, r_queue, e_queue, p_index):
     sys.stderr = open(join(tmp_dir, str(getpid()) + '.err'), 'a')
 
     with torch.no_grad():
-        r_gen = RolloutGenerator(args.logdir, device)
+        r_gen = RolloutGenerator(args.logdir, device, time_limit)
 
         while e_queue.empty():
             if p_queue.empty():
