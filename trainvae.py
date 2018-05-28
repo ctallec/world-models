@@ -14,6 +14,9 @@ from models.vae import VAE
 
 from utils import save_checkpoint
 from utils import LSIZE, RED_SIZE
+from utils import EarlyStopping
+## WARNING : THIS SHOULD BE REPLACE WITH PYTORCH 0.5
+from utils import ReduceLROnPlateau
 from data.utils import RolloutObservationDataset
 
 parser = argparse.ArgumentParser(description='VAE Trainer')
@@ -62,7 +65,8 @@ test_loader = torch.utils.data.DataLoader(
 
 model = VAE(3, LSIZE).to(device)
 optimizer = optim.Adam(model.parameters())
-scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=5)
+scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=5)
+earlystopping = EarlyStopping('min', patience=30)
 
 # Reconstruction + KL divergence losses summed over all elements and batch
 def loss_function(recon_x, x, mu, logsigma):
@@ -130,14 +134,18 @@ if not args.noreload and exists(reload_file):
               state['precision']))
     model.load_state_dict(state['state_dict'])
     optimizer.load_state_dict(state['optimizer'])
+    scheduler.load_state_dict(state['scheduler'])
+    earlystopping.load_state_dict(state['earlystopping'])
+
 
 cur_best = None
-                    
+
 for epoch in range(1, args.epochs + 1):
     train(epoch)
     test_loss = test()
     scheduler.step(test_loss)
-    
+    earlystopping.step(test_loss)
+
     # checkpointing
     best_filename = join(vae_dir, 'best.tar')
     filename = join(vae_dir, 'checkpoint.tar')
@@ -149,8 +157,12 @@ for epoch in range(1, args.epochs + 1):
         'epoch': epoch,
         'state_dict': model.state_dict(),
         'precision': test_loss,
-        'optimizer': optimizer.state_dict()
+        'optimizer': optimizer.state_dict(),
+        'scheduler': scheduler.state_dict(),
+        'earlystopping': earlystopping.state_dict()
     }, is_best, filename, best_filename)
+
+
 
     if not args.nosamples:
         with torch.no_grad():
@@ -159,3 +171,6 @@ for epoch in range(1, args.epochs + 1):
             save_image(sample.view(64, 3, RED_SIZE, RED_SIZE),
                        join(vae_dir, 'samples/sample_' + str(epoch) + '.png'))
 
+    if earlystopping.stop:
+        print("End of Training because of early stopping at epoch {}".format(epoch))
+        break

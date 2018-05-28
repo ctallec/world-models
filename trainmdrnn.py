@@ -10,6 +10,9 @@ from torchvision import transforms
 import numpy as np
 from tqdm import tqdm
 from utils import save_checkpoint
+from utils import EarlyStopping
+## WARNING : THIS SHOULD BE REPLACE WITH PYTORCH 0.5
+from utils import ReduceLROnPlateau
 from utils import ASIZE, LSIZE, RSIZE, RED_SIZE, SIZE
 
 from data.utils import RolloutSequenceDataset
@@ -51,6 +54,9 @@ if not exists(rnn_dir):
 mdrnn = MDRNN(LSIZE, ASIZE, RSIZE, 5)
 mdrnn.to(device)
 optimizer = torch.optim.RMSprop(mdrnn.parameters(), lr=1e-3, alpha=.9)
+scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=5)
+earlystopping = EarlyStopping('min', patience=30)
+
 
 if exists(rnn_file) and not args.noreload:
     rnn_state = torch.load(rnn_file)
@@ -59,6 +65,8 @@ if exists(rnn_file) and not args.noreload:
               rnn_state["epoch"], rnn_state["precision"]))
     mdrnn.load_state_dict(rnn_state["state_dict"])
     optimizer.load_state_dict(rnn_state["optimizer"])
+    scheduler.load_state_dict(state['scheduler'])
+    earlystopping.load_state_dict(state['earlystopping'])
 
 
 # Data Loading
@@ -183,7 +191,9 @@ for e in range(epochs):
     cur_best = None
     train(e)
     test_loss = test(e)
-
+    scheduler.step(test_loss)
+    earlystopping.step(test_loss)
+    
     is_best = not cur_best or test_loss < cur_best
     if is_best:
         cur_best = test_loss
@@ -191,6 +201,14 @@ for e in range(epochs):
     save_checkpoint({
         "state_dict": mdrnn.state_dict(),
         "optimizer": optimizer.state_dict(),
+        'scheduler': scheduler.state_dict(),
+        'earlystopping': earlystopping.state_dict(),
         "precision": test_loss,
         "epoch": e}, is_best, checkpoint_fname,
                     rnn_file)
+
+    if earlystopping.stop:
+        print("End of Training because of early stopping at epoch {}".format(epoch))
+        break
+
+    
