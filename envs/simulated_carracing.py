@@ -8,18 +8,20 @@ import gym
 from gym import spaces
 from models.vae import VAE
 from models.mdrnn import MDRNNCell
+from utils import LSIZE, RSIZE, RED_SIZE
 
 import numpy as np
 
 class SimulatedCarracing(gym.Env): # pylint: disable=too-many-instance-attributes
     """
-    Simulated Car Racing
-    """
-    LSIZE = 32
-    HSIZE = 256
-    STATE_H = 64
-    STATE_W = 64
+    Simulated Car Racing.
 
+    Gym environment using learnt VAE and MDRNN to simulate the
+    CarRacing-v0 environment.
+
+    :args directory: directory from which the vae and mdrnn are
+    loaded.
+    """
     def __init__(self, directory):
         vae_file = join(directory, 'vae', 'best.tar')
         rnn_file = join(directory, 'mdrnn', 'best.tar')
@@ -28,11 +30,11 @@ class SimulatedCarracing(gym.Env): # pylint: disable=too-many-instance-attribute
 
         # spaces
         self.action_space = spaces.Box(np.array([-1, 0, 0]), np.array([1, 1, 1]))
-        self.observation_space = spaces.Box(low=0, high=255, shape=(self.STATE_H, self.STATE_W, 3),
+        self.observation_space = spaces.Box(low=0, high=255, shape=(RED_SIZE, RED_SIZE, 3),
                                             dtype=np.uint8)
 
         # load VAE
-        vae = VAE(3, self.LSIZE)
+        vae = VAE(3, LSIZE)
         vae_state = torch.load(vae_file, map_location=lambda storage, location: storage)
         print("Loading VAE at epoch {}, "
               "with test error {}...".format(
@@ -41,7 +43,7 @@ class SimulatedCarracing(gym.Env): # pylint: disable=too-many-instance-attribute
         self._decoder = vae.decoder
 
         # load MDRNN
-        self._rnn = MDRNNCell(32, 3, self.HSIZE, 5)
+        self._rnn = MDRNNCell(32, 3, RSIZE, 5)
         rnn_state = torch.load(rnn_file, map_location=lambda storage, location: storage)
         print("Loading MDRNN at epoch {}, "
               "with test error {}...".format(
@@ -50,8 +52,8 @@ class SimulatedCarracing(gym.Env): # pylint: disable=too-many-instance-attribute
         self._rnn.load_state_dict(rnn_state_dict)
 
         # init state
-        self._lstate = torch.randn(1, self.LSIZE)
-        self._hstate = 2 * [torch.zeros(1, self.HSIZE)]
+        self._lstate = torch.randn(1, LSIZE)
+        self._hstate = 2 * [torch.zeros(1, RSIZE)]
 
         # obs
         self._obs = None
@@ -64,14 +66,14 @@ class SimulatedCarracing(gym.Env): # pylint: disable=too-many-instance-attribute
     def reset(self):
         """ Resetting """
         import matplotlib.pyplot as plt
-        self._lstate = torch.randn(1, self.LSIZE)
-        self._hstate = 2 * [torch.zeros(1, self.HSIZE)]
+        self._lstate = torch.randn(1, LSIZE)
+        self._hstate = 2 * [torch.zeros(1, RSIZE)]
 
         # also reset monitor
         if not self.monitor:
             self.figure = plt.figure()
             self.monitor = plt.imshow(
-                np.zeros((self.STATE_H, self.STATE_W, 3),
+                np.zeros((RED_SIZE, RED_SIZE, 3),
                          dtype=np.uint8))
 
     def step(self, action):
@@ -101,7 +103,7 @@ class SimulatedCarracing(gym.Env): # pylint: disable=too-many-instance-attribute
         if not self.monitor:
             self.figure = plt.figure()
             self.monitor = plt.imshow(
-                np.zeros((self.STATE_H, self.STATE_W, 3),
+                np.zeros((RED_SIZE, RED_SIZE, 3),
                          dtype=np.uint8))
         self.monitor.set_data(self._visual_obs)
         plt.pause(.01)

@@ -13,11 +13,12 @@ from torchvision.utils import save_image
 from models.vae import VAE
 
 from utils import save_checkpoint
+from utils import LSIZE, RED_SIZE
 from data.utils import RolloutObservationDataset
 
 parser = argparse.ArgumentParser(description='VAE Trainer')
 parser.add_argument('--batch-size', type=int, default=32, metavar='N',
-                    help='input batch size for training (default: 128)')
+                    help='input batch size for training (default: 32)')
 parser.add_argument('--epochs', type=int, default=1000, metavar='N',
                     help='number of epochs to train (default: 10)')
 parser.add_argument('--logdir', type=str, help='Directory where results are logged')
@@ -38,14 +39,14 @@ device = torch.device("cuda" if cuda else "cpu")
 
 transform_train = transforms.Compose([
     transforms.ToPILImage(),
-    transforms.Resize((64, 64)),
+    transforms.Resize((RED_SIZE, RED_SIZE)),
     transforms.RandomHorizontalFlip(),
     transforms.ToTensor(),
 ])
 
 transform_test = transforms.Compose([
     transforms.ToPILImage(),
-    transforms.Resize((64, 64)),
+    transforms.Resize((RED_SIZE, RED_SIZE)),
     transforms.ToTensor(),
 ])
 
@@ -59,7 +60,7 @@ test_loader = torch.utils.data.DataLoader(
     dataset_test, batch_size=args.batch_size, shuffle=True, num_workers=2)
 
 
-model = VAE(3, 32).to(device)
+model = VAE(3, LSIZE).to(device)
 optimizer = optim.Adam(model.parameters())
 scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=5)
 
@@ -152,8 +153,10 @@ for epoch in range(1, args.epochs + 1):
     }, is_best, filename, best_filename)
 
     if not args.nosamples:
-        with torch.no_grad():
-            sample = torch.randn(64, 32).to(device)
+	with torch.no_grad():
+            sample = torch.randn(RED_SIZE, LSIZE).to(device)
             sample = model.decoder(sample).cpu()
-            save_image(sample.view(64, 3, 64, 64),
-                       join(vae_dir, 'samples/sample_' + str(epoch) + '.png'))
+            save_image(sample.view(64, 3, RED_SIZE, RED_SIZE),
+                        join(vae_dir, 'samples/sample_' + str(epoch) + '.png'))
+
+

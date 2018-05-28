@@ -8,7 +8,28 @@ import torch.nn.functional as f
 from torch.distributions.normal import Normal
 
 def gmm_loss(batch, mus, sigmas, pi, reduce=True): # pylint: disable=too-many-arguments
-    """ Computes the gmm loss """
+    """ Computes the gmm loss.
+
+    Compute minus the log probability of batch under the GMM model described
+    by mus, sigmas, pi. Precisely, with bs1, bs2, ... the sizes of the batch
+    dimensions (several batch dimension are useful when you have both a batch
+    axis and a time step axis), gs the number of mixtures and fs the number of
+    features.
+
+    :args batch: (bs1, bs2, *, fs) torch tensor
+    :args mus: (bs1, bs2, *, gs, fs) torch tensor
+    :args sigmas: (bs1, bs2, *, gs, fs) torch tensor
+    :args pi: (bs1, bs2, *, gs) torch tensor
+    :args reduce: if not reduce, the mean in the following formula is ommited
+
+    :returns:
+    loss(batch) = - mean_{i1=0..bs1, i2=0..bs2, ...} log(
+        sum_{k=1..gs} pi[i1, i2, ..., k] * N(
+            batch[i1, i2, ..., :] | mus[i1, i2, ..., k, :], sigmas[i1, i2, ..., k, :]))
+
+    NOTE: The loss is not reduced along the feature dimension (i.e. it should scale ~linearily
+    with fs).
+    """
     batch = batch.unsqueeze(-2)
 
     normal_dist = Normal(mus, sigmas)
@@ -46,10 +67,20 @@ class MDRNN(_MDRNNBase):
         self.rnn = nn.LSTM(latents + actions, hiddens)
 
     def forward(self, actions, latents): # pylint: disable=arguments-differ
-        """ MULTI STEPS forward """
-        # actions: (seq_len, bs, a_size)
-        # latents: (seq_len, bs, l_size)
-        # hiddens: (seq_len, bs, h_size)
+        """ MULTI STEPS forward.
+
+        :args actions: (SEQ_LEN, BSIZE, ASIZE) torch tensor
+        :args latents: (SEQ_LEN, BSIZE, LSIZE) torch tensor
+
+        :returns: mu_nlat, sig_nlat, pi_nlat, rs, ds, parameters of the GMM
+        prediction for the next latent, gaussian prediction of the reward and
+        logit prediction of terminality.
+            - mu_nlat: (SEQ_LEN, BSIZE, N_GAUSS, LSIZE) torch tensor
+            - sigma_nlat: (SEQ_LEN, BSIZE, N_GAUSS, LSIZE) torch tensor
+            - pi_nlat: (SEQ_LEN, BSIZE, N_GAUSS) torch tensor
+            - rs: (SEQ_LEN, BSIZE) torch tensor
+            - ds: (SEQ_LEN, BSIZE) torch tensor
+        """
         seq_len, bs = actions.size(0), actions.size(1)
 
         ins = torch.cat([actions, latents], dim=-1)
@@ -82,7 +113,21 @@ class MDRNNCell(_MDRNNBase):
         self.rnn = nn.LSTMCell(latents + actions, hiddens)
 
     def forward(self, action, latent, hidden): # pylint: disable=arguments-differ
-        """ ONE STEP forward """
+        """ ONE STEP forward.
+
+        :args actions: (BSIZE, ASIZE) torch tensor
+        :args latents: (BSIZE, LSIZE) torch tensor
+        :args hidden: (BSIZE, RSIZE) torch tensor
+
+        :returns: mu_nlat, sig_nlat, pi_nlat, r, d, next_hidden, parameters of
+        the GMM prediction for the next latent, gaussian prediction of the
+        reward, logit prediction of terminality and next hidden state.
+            - mu_nlat: (BSIZE, N_GAUSS, LSIZE) torch tensor
+            - sigma_nlat: (BSIZE, N_GAUSS, LSIZE) torch tensor
+            - pi_nlat: (BSIZE, N_GAUSS) torch tensor
+            - rs: (BSIZE) torch tensor
+            - ds: (BSIZE) torch tensor
+        """
         in_al = torch.cat([action, latent], dim=1)
 
         next_hidden = self.rnn(in_al, hidden)

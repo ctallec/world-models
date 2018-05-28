@@ -7,18 +7,28 @@ import numpy as np
 from models import MDRNNCell, VAE, Controller
 import gym
 
-ASIZE, LSIZE, RSIZE = 3, 32, 256
+# Hardcoded for now
+ASIZE, LSIZE, RSIZE, RED_SIZE, SIZE =\
+    3, 32, 256, 64, 96
 
+# Same
 transform = transforms.Compose([
     transforms.ToPILImage(),
-    transforms.Resize((64, 64)),
+    transforms.Resize((RED_SIZE, RED_SIZE)),
     transforms.ToTensor()
 ])
 
 def sample_continuous_policy(action_space, seq_len, dt):
-    """
-    Sample a continuous policy. Atm, action_space is supposed
-    to be a box environment.
+    """ Sample a continuous policy.
+
+    Atm, action_space is supposed to be a box environment. The policy is
+    sampled as a brownian motion a_{t+1} = a_t + sqrt(dt) N(0, 1).
+
+    :args action_space: gym action space
+    :args seq_len: number of actions returned
+    :args dt: temporal discretization
+
+    :returns: sequence of seq_len actions
     """
     actions = [action_space.sample()]
     for _ in range(seq_len):
@@ -29,17 +39,31 @@ def sample_continuous_policy(action_space, seq_len, dt):
     return actions
 
 def save_checkpoint(state, is_best, filename, best_filename):
-    """ Save state in filename and in best_filename if is_best """
+    """ Save state in filename. Also save in best_filename if is_best. """
     torch.save(state, filename)
     if is_best:
         torch.save(state, best_filename)
 
 def flatten_parameters(params):
-    """ Flattening parameters """
+    """ Flattening parameters.
+
+    :args params: generator of parameters (as returned by module.parameters())
+
+    :returns: flattened parameters (i.e. one tensor of dimension 1 with all
+        parameters concatenated)
+    """
     return torch.cat([p.detach().view(-1) for p in params], dim=0).cpu().numpy()
 
 def unflatten_parameters(params, example, device):
-    """ unflatten parameters """
+    """ Unflatten parameters.
+
+    :args params: parameters as a single 1D np array
+    :args example: generator of parameters (as returned by module.parameters()),
+        used to reshape params
+    :args device: where to store unflattened parameters
+
+    :returns: unflattened parameters
+    """
     params = torch.Tensor(params).to(device)
     idx = 0
     unflattened = []
@@ -49,7 +73,11 @@ def unflatten_parameters(params, example, device):
     return unflattened
 
 def load_parameters(params, controller):
-    """ Load flattened parameters into controller """
+    """ Load flattened parameters into controller.
+
+    :args params: parameters as a single 1D np array
+    :args controller: module in which params is loaded
+    """
     proto = next(controller.parameters())
     params = unflatten_parameters(
         params, controller.parameters(), proto.device)
@@ -58,9 +86,18 @@ def load_parameters(params, controller):
         p.data.copy_(p_0)
 
 class RolloutGenerator(object):
-    """
-    Encapsulate everything that is needed to
-    generate rollouts.
+    """ Utility to generate rollouts.
+
+    Encapsulate everything that is needed to generate rollouts in the TRUE ENV
+    using a controller with previously trained VAE and MDRNN.
+
+    :attr vae: VAE model loaded from mdir/vae
+    :attr mdrnn: MDRNN model loaded from mdir/mdrnn
+    :attr controller: Controller, either loaded from mdir/ctrl or randomly
+        initialized
+    :attr env: instance of the CarRacing-v0 gym environment
+    :attr device: device used to run VAE, MDRNN and Controller
+    :attr time_limit: rollouts have a maximum of time_limit timesteps
     """
     def __init__(self, mdir, device, time_limit):
         """ Build vae, rnn, controller and environment. """
@@ -102,16 +139,36 @@ class RolloutGenerator(object):
         self.time_limit = time_limit
 
     def get_action_and_transition(self, obs, hidden):
-        """ Gets action and transition """
+        """ Get action and transition.
+
+        Encode obs to latent using the VAE, then obtain estimation for next
+        latent and next hidden state using the MDRNN and compute the controller
+        corresponding action.
+
+        :args obs: current observation (1 x 3 x 64 x 64) torch tensor
+        :args hidden: current hidden state (1 x 256) torch tensor
+
+        :returns: (action, next_hidden)
+            - action: 1D np array
+            - next_hidden (1 x 256) torch tensor
+        """
         _, latent_mu, _ = self.vae(obs)
         action = self.controller(latent_mu, hidden[0])
         _, _, _, _, _, next_hidden = self.mdrnn(action, latent_mu, hidden)
         return action.squeeze().cpu().numpy(), next_hidden
 
     def rollout(self, params):
-        """ One rollout """
+        """ Execute a rollout and returns minus cumulative reward.
+
+        Load :params: into the controller and execute a single rollout. This
+        is the main API of this class.
+
+        :args params: parameters as a single 1D np array
+
+        :returns: minus cumulative reward
+        """
         # copy params into the controller
-        if params:
+        if params is not None:
             load_parameters(params, self.controller)
 
         obs = self.env.reset()
