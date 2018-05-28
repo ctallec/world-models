@@ -10,6 +10,7 @@ from torchvision import transforms
 import numpy as np
 from tqdm import tqdm
 from utils import save_checkpoint
+from utils import ASIZE, LSIZE, RSIZE, RED_SIZE, SIZE
 
 from data.utils import RolloutSequenceDataset
 from models.vae import VAE
@@ -25,11 +26,8 @@ args = parser.parse_args()
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # constants
-LSIZE = 32
 BSIZE = 16
 SEQ_LEN = 32
-SIZE = 96
-RED_SIZE = 64
 epochs = 30
 
 # Loading VAE
@@ -40,7 +38,7 @@ print("Loading VAE at epoch {} "
       "with test error {}".format(
           state['epoch'], state['precision']))
 
-vae = VAE(3, LSIZE).to(device)
+vae = VAE(ASIZE, LSIZE).to(device)
 vae.load_state_dict(state['state_dict'])
 
 # Loading model
@@ -50,7 +48,7 @@ rnn_file = join(rnn_dir, 'best.tar')
 if not exists(rnn_dir):
     mkdir(rnn_dir)
 
-mdrnn = MDRNN(LSIZE, 3, 256, 5)
+mdrnn = MDRNN(LSIZE, ASIZE, RSIZE, 5)
 mdrnn.to(device)
 optimizer = torch.optim.RMSprop(mdrnn.parameters(), lr=1e-3, alpha=.9)
 
@@ -74,7 +72,15 @@ test_loader = DataLoader(
     batch_size=BSIZE, num_workers=8)
 
 def to_latent(obs, next_obs):
-    """ Transform observations to latent space """
+    """ Transform observations to latent space.
+
+    :args obs: 5D torch tensor (BSIZE, SEQ_LEN, ASIZE, SIZE, SIZE)
+    :args next_obs: 5D torch tensor (BSIZE, SEQ_LEN, ASIZE, SIZE, SIZE)
+
+    :returns: (latent_obs, latent_next_obs)
+        - latent_obs: 4D torch tensor (BSIZE, SEQ_LEN, LSIZE)
+        - next_latent_obs: 4D torch tensor (BSIZE, SEQ_LEN, LSIZE)
+    """
     with torch.no_grad():
         obs, next_obs = [
             f.upsample(x.view(-1, 3, SIZE, SIZE), size=RED_SIZE,
@@ -91,7 +97,23 @@ def to_latent(obs, next_obs):
     return latent_obs, latent_next_obs
 
 def get_loss(latent_obs, action, reward, terminal, latent_next_obs):
-    """ Computes losses """
+    """ Compute losses.
+
+    The loss that is computed is:
+    (GMMLoss(latent_next_obs, GMMPredicted) + MSE(reward, predicted_reward) +
+         BCE(terminal, logit_terminal)) / (LSIZE + 2)
+    The LSIZE + 2 factor is here to counteract the fact that the GMMLoss scales
+    approximately linearily with LSIZE. All losses are averaged both on the
+    batch and the sequence dimensions (the two first dimensions).
+
+    :args latent_obs: (BSIZE, SEQ_LEN, LSIZE) torch tensor
+    :args action: (BSIZE, SEQ_LEN, ASIZE) torch tensor
+    :args reward: (BSIZE, SEQ_LEN) torch tensor
+    :args latent_next_obs: (BSIZE, SEQ_LEN, LSIZE) torch tensor
+
+    :returns: dictionary of losses, containing the gmm, the mse, the bce and
+        the averaged loss.
+    """
     latent_obs, action,\
         reward, terminal,\
         latent_next_obs = [arr.transpose(1, 0)

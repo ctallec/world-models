@@ -1,5 +1,4 @@
 """ Some data examination """
-import math
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -36,33 +35,5 @@ def plot_rollout():
             plt.pause(.01)
         break
 
-def sample_continuous_policy(action_space, seq_len, dt):
-    """
-    Sample a continuous policy. Atm, action_space is supposed
-    to be a box environment.
-    """
-    actions = [action_space.sample()]
-    for _ in range(seq_len):
-        daction_dt = np.random.randn(*actions[-1].shape)
-        actions.append(
-            np.clip(actions[-1] + math.sqrt(dt) * daction_dt,
-                    action_space.low, action_space.high))
-    return actions
-
-def plot_continuous_policy():
-    """ Plot a rollout using a continuous policy """
-    import gym
-    from gym.envs.box2d.car_racing import FPS
-    episode_length = 1000
-    env = gym.make('CarRacing-v0')
-    env.reset()
-
-    actions = sample_continuous_policy(env.action_space, episode_length, 1 / FPS)
-
-    for i in range(episode_length):
-        env.step(actions[i])
-        env.render()
-
 if __name__ == '__main__':
     plot_rollout()
-    plot_continuous_policy()

@@ -18,18 +18,13 @@ from tqdm import tqdm
 import numpy as np
 from utils import RolloutGenerator, ASIZE, RSIZE, LSIZE
 from utils import load_parameters
-from utils import flatten_parameters, unflatten_parameters
+from utils import flatten_parameters
 
 # parsing
 parser = argparse.ArgumentParser()
 parser.add_argument('--logdir', type=str, help='Where everything is stored.')
 args = parser.parse_args()
 
-# Some constants
-# TODO: put all constants in a config file
-LSIZE = 32
-RSIZE = 256
-ASIZE = 3
 
 # multiprocessing variables
 n_samples = 4
@@ -56,9 +51,24 @@ if not exists(ctrl_dir):
 def slave_routine(p_queue, r_queue, e_queue, p_index):
     """ Thread routine.
 
-    :args p_queue: queue containing couples (p_id, s_id, parameters) to evaluate
-    :args r_queue: where to place results (p_id, s_id, results)
+    Threads interact with p_queue, the parameters queue, r_queue, the result
+    queue and e_queue the end queue. They pull parameters from p_queue, execute
+    the corresponding rollout, then place the result in r_queue.
+
+    Each parameter has its own unique id. Parameters are pulled as tuples
+    (s_id, params) and results are pushed as (s_id, result).  The same
+    parameter can appear multiple times in p_queue, displaying the same id
+    each time.
+
+    As soon as e_queue is non empty, the thread terminate.
+
+    When multiple gpus are involved, the assigned gpu is determined by the
+    process index p_index (gpu = p_index % n_gpus).
+
+    :args p_queue: queue containing couples (s_id, parameters) to evaluate
+    :args r_queue: where to place results (s_id, results)
     :args e_queue: as soon as not empty, terminate
+    :args p_index: the process index
     """
     # init routine
     gpu = p_index % torch.cuda.device_count()
