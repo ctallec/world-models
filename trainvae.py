@@ -23,6 +23,8 @@ parser.add_argument('--epochs', type=int, default=1000, metavar='N',
 parser.add_argument('--logdir', type=str, help='Directory where results are logged')
 parser.add_argument('--noreload', action='store_true',
                     help='Best model is not reloaded if specified')
+parser.add_argument('--nosamples', action='store_true',
+                    help='Does not save samples during training if specified')
 
 
 args = parser.parse_args()
@@ -59,6 +61,7 @@ test_loader = torch.utils.data.DataLoader(
 
 model = VAE(3, 32).to(device)
 optimizer = optim.Adam(model.parameters())
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=5)
 
 # Reconstruction + KL divergence losses summed over all elements and batch
 def loss_function(recon_x, x, mu, logsigma):
@@ -128,10 +131,12 @@ if not args.noreload and exists(reload_file):
     optimizer.load_state_dict(state['optimizer'])
 
 cur_best = None
+                    
 for epoch in range(1, args.epochs + 1):
     train(epoch)
     test_loss = test()
-
+    scheduler.step(test_loss)
+    
     # checkpointing
     best_filename = join(vae_dir, 'best.tar')
     filename = join(vae_dir, 'checkpoint.tar')
@@ -146,8 +151,9 @@ for epoch in range(1, args.epochs + 1):
         'optimizer': optimizer.state_dict()
     }, is_best, filename, best_filename)
 
-    with torch.no_grad():
-        sample = torch.randn(64, 32).to(device)
-        sample = model.decoder(sample).cpu()
-        save_image(sample.view(64, 3, 64, 64),
-                   join(vae_dir, 'samples/sample_' + str(epoch) + '.png'))
+    if not args.nosamples:
+        with torch.no_grad():
+            sample = torch.randn(64, 32).to(device)
+            sample = model.decoder(sample).cpu()
+            save_image(sample.view(64, 3, 64, 64),
+                       join(vae_dir, 'samples/sample_' + str(epoch) + '.png'))
