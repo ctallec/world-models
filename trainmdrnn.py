@@ -38,7 +38,7 @@ print("Loading VAE at epoch {} "
       "with test error {}".format(
           state['epoch'], state['precision']))
 
-vae = VAE(ASIZE, LSIZE).to(device)
+vae = VAE(3, LSIZE).to(device)
 vae.load_state_dict(state['state_dict'])
 
 # Loading model
