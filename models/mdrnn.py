@@ -7,7 +7,8 @@ import torch.nn as nn
 import torch.nn.functional as f
 from torch.distributions.normal import Normal
 
-def gmm_loss(batch, mus, sigmas, pi, reduce=True): # pylint: disable=too-many-arguments
+import pdb
+def gmm_loss(batch, mus, sigmas, logpi, reduce=True): # pylint: disable=too-many-arguments
     """ Computes the gmm loss.
 
     Compute minus the log probability of batch under the GMM model described
@@ -19,7 +20,7 @@ def gmm_loss(batch, mus, sigmas, pi, reduce=True): # pylint: disable=too-many-ar
     :args batch: (bs1, bs2, *, fs) torch tensor
     :args mus: (bs1, bs2, *, gs, fs) torch tensor
     :args sigmas: (bs1, bs2, *, gs, fs) torch tensor
-    :args pi: (bs1, bs2, *, gs) torch tensor
+    :args logpi: (bs1, bs2, *, gs) torch tensor
     :args reduce: if not reduce, the mean in the following formula is ommited
 
     :returns:
@@ -31,15 +32,14 @@ def gmm_loss(batch, mus, sigmas, pi, reduce=True): # pylint: disable=too-many-ar
     with fs).
     """
     batch = batch.unsqueeze(-2)
-
     normal_dist = Normal(mus, sigmas)
     g_log_probs = normal_dist.log_prob(batch)
-    g_log_probs = torch.sum(g_log_probs, dim=-1)
+    g_log_probs = logpi + torch.sum(g_log_probs, dim=-1)
     max_log_probs = torch.max(g_log_probs, dim=-1, keepdim=True)[0]
     g_log_probs = g_log_probs - max_log_probs
 
     g_probs = torch.exp(g_log_probs)
-    probs = torch.sum(g_probs * pi, dim=-1)
+    probs = torch.sum(g_probs, dim=-1)
 
     log_prob = max_log_probs.squeeze() + torch.log(probs)
     if reduce:
@@ -77,7 +77,7 @@ class MDRNN(_MDRNNBase):
         logit prediction of terminality.
             - mu_nlat: (SEQ_LEN, BSIZE, N_GAUSS, LSIZE) torch tensor
             - sigma_nlat: (SEQ_LEN, BSIZE, N_GAUSS, LSIZE) torch tensor
-            - pi_nlat: (SEQ_LEN, BSIZE, N_GAUSS) torch tensor
+            - logpi_nlat: (SEQ_LEN, BSIZE, N_GAUSS) torch tensor
             - rs: (SEQ_LEN, BSIZE) torch tensor
             - ds: (SEQ_LEN, BSIZE) torch tensor
         """
@@ -98,13 +98,13 @@ class MDRNN(_MDRNNBase):
 
         pi = gmm_outs[:, :, 2 * stride: 2 * stride + self.gaussians]
         pi = pi.view(seq_len, bs, self.gaussians)
-        pi = f.softmax(pi, dim=-2)
+        logpi = f.log_softmax(pi, dim=-2)
 
         rs = gmm_outs[:, :, -2]
 
         ds = gmm_outs[:, :, -1]
 
-        return mus, sigmas, pi, rs, ds
+        return mus, sigmas, logpi, rs, ds
 
 class MDRNNCell(_MDRNNBase):
     """ MDRNN model for one step forward """
@@ -124,7 +124,7 @@ class MDRNNCell(_MDRNNBase):
         reward, logit prediction of terminality and next hidden state.
             - mu_nlat: (BSIZE, N_GAUSS, LSIZE) torch tensor
             - sigma_nlat: (BSIZE, N_GAUSS, LSIZE) torch tensor
-            - pi_nlat: (BSIZE, N_GAUSS) torch tensor
+            - logpi_nlat: (BSIZE, N_GAUSS) torch tensor
             - rs: (BSIZE) torch tensor
             - ds: (BSIZE) torch tensor
         """
@@ -146,10 +146,10 @@ class MDRNNCell(_MDRNNBase):
 
         pi = out_full[:, 2 * stride:2 * stride + self.gaussians]
         pi = pi.view(-1, self.gaussians)
-        pi = f.softmax(pi, dim=-2)
+        logpi = f.log_softmax(pi, dim=-2)
 
         r = out_full[:, -2]
 
         d = out_full[:, -1]
 
-        return mus, sigmas, pi, r, d, next_hidden
+        return mus, sigmas, logpi, r, d, next_hidden

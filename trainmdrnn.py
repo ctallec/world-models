@@ -120,12 +120,13 @@ def get_loss(latent_obs, action, reward, terminal, latent_next_obs):
                            for arr in [latent_obs, action,
                                        reward, terminal,
                                        latent_next_obs]]
-    mus, sigmas, pi, rs, ds = mdrnn(action, latent_obs)
-    gmm = gmm_loss(latent_next_obs, mus, sigmas, pi)
+    mus, sigmas, logpi, rs, ds = mdrnn(action, latent_obs)
+    gmm = gmm_loss(latent_next_obs, mus, sigmas, logpi)
     bce = f.binary_cross_entropy_with_logits(ds, terminal)
     mse = f.mse_loss(rs, reward)
     loss = (gmm + bce + mse) / (LSIZE + 2)
     return dict(gmm=gmm, bce=bce, mse=mse, loss=loss)
+
 
 def data_pass(epoch, train): # pylint: disable=too-many-locals
     """ One pass through the data """
@@ -144,7 +145,6 @@ def data_pass(epoch, train): # pylint: disable=too-many-locals
     cum_mse = 0
 
     pbar = tqdm(total=len(loader.dataset), desc="Epoch {}".format(epoch))
-
     for i, data in enumerate(loader):
         obs, action, reward, terminal, next_obs = [arr.to(device) for arr in data]
 
