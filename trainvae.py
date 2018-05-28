@@ -159,4 +159,3 @@ for epoch in range(1, args.epochs + 1):
             save_image(sample.view(64, 3, RED_SIZE, RED_SIZE),
                        join(vae_dir, 'samples/sample_' + str(epoch) + '.png'))
 
-
