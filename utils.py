@@ -111,7 +111,7 @@ class RolloutGenerator(object):
     def rollout(self, params):
         """ One rollout """
         # copy params into the controller
-        if params:
+        if params is not None:
             load_parameters(params, self.controller)
 
         obs = self.env.reset()
