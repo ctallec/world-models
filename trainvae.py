@@ -153,10 +153,10 @@ for epoch in range(1, args.epochs + 1):
     }, is_best, filename, best_filename)
 
     if not args.nosamples:
-	with torch.no_grad():
+        with torch.no_grad():
             sample = torch.randn(RED_SIZE, LSIZE).to(device)
             sample = model.decoder(sample).cpu()
             save_image(sample.view(64, 3, RED_SIZE, RED_SIZE),
-                        join(vae_dir, 'samples/sample_' + str(epoch) + '.png'))
+                       join(vae_dir, 'samples/sample_' + str(epoch) + '.png'))
 
 
