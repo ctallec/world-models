@@ -23,6 +23,8 @@ from utils import flatten_parameters
 # parsing
 parser = argparse.ArgumentParser()
 parser.add_argument('--logdir', type=str, help='Where everything is stored.')
+parser.add_argument('--noreload', action='store_true',
+                    help="Do not reload if specified.")
 args = parser.parse_args()
 
 
@@ -44,6 +46,7 @@ else:
 ctrl_dir = join(args.logdir, 'ctrl')
 if not exists(ctrl_dir):
     mkdir(ctrl_dir)
+
 
 ################################################################################
 #                           Thread routines                                    #
@@ -88,6 +91,7 @@ def slave_routine(p_queue, r_queue, e_queue, p_index):
                 s_id, params = p_queue.get()
                 r_queue.put((s_id, r_gen.rollout(params)))
 
+
 ################################################################################
 #                Define queues and start workers                               #
 ################################################################################
@@ -101,7 +105,7 @@ for p_index in range(num_workers):
 ################################################################################
 #                           Launch CMA                                         #
 ################################################################################
-controller = Controller(LSIZE, RSIZE, ASIZE) # dummy instance
+controller = Controller(LSIZE, RSIZE, ASIZE)  # dummy instance
 parameters = controller.parameters()
 es = cma.CMAEvolutionStrategy(flatten_parameters(parameters), 0.1,
                               {'popsize': pop_size})
@@ -109,13 +113,13 @@ es = cma.CMAEvolutionStrategy(flatten_parameters(parameters), 0.1,
 # define current best
 cur_best = None
 ctrl_file = join(ctrl_dir, 'best.tar')
-if exists(ctrl_file):
+if exists(ctrl_file) and not args.noreload:
     cur_best = - torch.load(ctrl_file, map_location={'cuda:0': 'cpu'})['reward']
     print("Previous best was {}...".format(-cur_best))
 
 epoch = 0
 while not es.stop():
-    r_list = [0] * pop_size # result list
+    r_list = [0] * pop_size  # result list
     solutions = es.ask()
 
     # push parameters to queue
