@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 def plot_rollout():
     """ Plot a rollout """
     from torch.utils.data import DataLoader
-    from data.utils import RolloutSequenceDataset
+    from data.loaders import RolloutSequenceDataset
     dataloader = DataLoader(
         RolloutSequenceDataset(
             root='datasets/carracing', seq_len=900,

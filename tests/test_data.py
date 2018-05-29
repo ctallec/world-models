@@ -4,8 +4,8 @@ import unittest
 import torch
 import numpy as np
 from torchvision import transforms
-from data.utils import RolloutSequenceDataset
-from data.utils import RolloutObservationDataset
+from data.loaders import RolloutSequenceDataset
+from data.loaders import RolloutObservationDataset
 
 class TestData(unittest.TestCase):
     """ Test data loading """

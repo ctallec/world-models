@@ -12,7 +12,7 @@ from tqdm import tqdm
 from utils import save_checkpoint
 from utils import ASIZE, LSIZE, RSIZE, RED_SIZE, SIZE
 
-from data.utils import RolloutSequenceDataset
+from data.loaders import RolloutSequenceDataset
 from models.vae import VAE
 from models.mdrnn import MDRNN, gmm_loss
 

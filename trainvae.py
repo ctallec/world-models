@@ -14,7 +14,7 @@ from models.vae import VAE
 
 from utils import save_checkpoint
 from utils import LSIZE, RED_SIZE
-from data.utils import RolloutObservationDataset
+from data.loaders import RolloutObservationDataset
 
 parser = argparse.ArgumentParser(description='VAE Trainer')
 parser.add_argument('--batch-size', type=int, default=32, metavar='N',
