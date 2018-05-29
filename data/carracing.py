@@ -6,7 +6,7 @@ import argparse
 from os.path import join, exists
 import gym
 import numpy as np
-from utils import sample_continuous_policy
+from utils.misc import sample_continuous_policy
 
 def generate_data(rollouts, data_dir, noise_type): # pylint: disable=R0914
     """ Generates data """

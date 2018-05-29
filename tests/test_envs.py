@@ -4,7 +4,7 @@ Testing environments
 """
 import unittest
 from envs.simulated_carracing import SimulatedCarracing
-from utils import sample_continuous_policy
+from utils.misc import sample_continuous_policy
 import numpy as np
 import matplotlib.pyplot as plt
 

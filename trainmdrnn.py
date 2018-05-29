@@ -9,11 +9,11 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 import numpy as np
 from tqdm import tqdm
-from utils import save_checkpoint
-from utils import EarlyStopping
+from utils.misc import save_checkpoint
+from utils.misc import ASIZE, LSIZE, RSIZE, RED_SIZE, SIZE
+from utils.learning import EarlyStopping
 ## WARNING : THIS SHOULD BE REPLACE WITH PYTORCH 0.5
-from utils import ReduceLROnPlateau
-from utils import ASIZE, LSIZE, RSIZE, RED_SIZE, SIZE
+from utils.learning import ReduceLROnPlateau
 
 from data.loaders import RolloutSequenceDataset
 from models.vae import VAE
@@ -193,7 +193,7 @@ for e in range(epochs):
     test_loss = test(e)
     scheduler.step(test_loss)
     earlystopping.step(test_loss)
-    
+
     is_best = not cur_best or test_loss < cur_best
     if is_best:
         cur_best = test_loss
@@ -208,7 +208,5 @@ for e in range(epochs):
                     rnn_file)
 
     if earlystopping.stop:
-        print("End of Training because of early stopping at epoch {}".format(epoch))
+        print("End of Training because of early stopping at epoch {}".format(e))
         break
-
-    

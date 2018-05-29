@@ -16,9 +16,9 @@ import cma
 from models import Controller
 from tqdm import tqdm
 import numpy as np
-from utils import RolloutGenerator, ASIZE, RSIZE, LSIZE
-from utils import load_parameters
-from utils import flatten_parameters
+from utils.misc import RolloutGenerator, ASIZE, RSIZE, LSIZE
+from utils.misc import load_parameters
+from utils.misc import flatten_parameters
 
 # parsing
 parser = argparse.ArgumentParser()

@@ -8,7 +8,7 @@ import gym
 from gym import spaces
 from models.vae import VAE
 from models.mdrnn import MDRNNCell
-from utils import LSIZE, RSIZE, RED_SIZE
+from utils.misc import LSIZE, RSIZE, RED_SIZE
 
 import numpy as np
 

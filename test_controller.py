@@ -1,7 +1,7 @@
 """ Test controller """
 import argparse
 from os.path import join, exists
-from utils import RolloutGenerator
+from utils.misc import RolloutGenerator
 import torch
 
 parser = argparse.ArgumentParser()
