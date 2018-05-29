@@ -12,12 +12,12 @@ from torchvision.utils import save_image
 
 from models.vae import VAE
 
-from utils import save_checkpoint
-from utils import LSIZE, RED_SIZE
-from data.loaders import RolloutObservationDataset
-from utils import EarlyStopping
+from utils.misc import save_checkpoint
+from utils.misc import LSIZE, RED_SIZE
 ## WARNING : THIS SHOULD BE REPLACE WITH PYTORCH 0.5
-from utils import ReduceLROnPlateau
+from utils.learning import EarlyStopping
+from utils.learning import ReduceLROnPlateau
+from data.loaders import RolloutObservationDataset
 
 parser = argparse.ArgumentParser(description='VAE Trainer')
 parser.add_argument('--batch-size', type=int, default=32, metavar='N',

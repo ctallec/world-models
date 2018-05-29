@@ -1,209 +1,20 @@
-""" Utilities """
-import math
+""" Learning utilities """
 from functools import partial
-from os.path import join, exists
-import torch
-from torchvision import transforms
-import numpy as np
-from models import MDRNNCell, VAE, Controller
-import gym
+from torch.optim import Optimizer
 
-# Hardcoded for now
-ASIZE, LSIZE, RSIZE, RED_SIZE, SIZE =\
-    3, 32, 256, 64, 96
-
-# Same
-transform = transforms.Compose([
-    transforms.ToPILImage(),
-    transforms.Resize((RED_SIZE, RED_SIZE)),
-    transforms.ToTensor()
-])
-
-def sample_continuous_policy(action_space, seq_len, dt):
-    """ Sample a continuous policy.
-
-    Atm, action_space is supposed to be a box environment. The policy is
-    sampled as a brownian motion a_{t+1} = a_t + sqrt(dt) N(0, 1).
-
-    :args action_space: gym action space
-    :args seq_len: number of actions returned
-    :args dt: temporal discretization
-
-    :returns: sequence of seq_len actions
+class EarlyStopping(object): # pylint: disable=R0902
     """
-    actions = [action_space.sample()]
-    for _ in range(seq_len):
-        daction_dt = np.random.randn(*actions[-1].shape)
-        actions.append(
-            np.clip(actions[-1] + math.sqrt(dt) * daction_dt,
-                    action_space.low, action_space.high))
-    return actions
-
-def save_checkpoint(state, is_best, filename, best_filename):
-    """ Save state in filename. Also save in best_filename if is_best. """
-    torch.save(state, filename)
-    if is_best:
-        torch.save(state, best_filename)
-
-def flatten_parameters(params):
-    """ Flattening parameters.
-
-    :args params: generator of parameters (as returned by module.parameters())
-
-    :returns: flattened parameters (i.e. one tensor of dimension 1 with all
-        parameters concatenated)
-    """
-    return torch.cat([p.detach().view(-1) for p in params], dim=0).cpu().numpy()
-
-def unflatten_parameters(params, example, device):
-    """ Unflatten parameters.
-
-    :args params: parameters as a single 1D np array
-    :args example: generator of parameters (as returned by module.parameters()),
-        used to reshape params
-    :args device: where to store unflattened parameters
-
-    :returns: unflattened parameters
-    """
-    params = torch.Tensor(params).to(device)
-    idx = 0
-    unflattened = []
-    for e_p in example:
-        unflattened += [params[idx:idx + e_p.numel()].view(e_p.size())]
-        idx += e_p.numel()
-    return unflattened
-
-def load_parameters(params, controller):
-    """ Load flattened parameters into controller.
-
-    :args params: parameters as a single 1D np array
-    :args controller: module in which params is loaded
-    """
-    proto = next(controller.parameters())
-    params = unflatten_parameters(
-        params, controller.parameters(), proto.device)
-
-    for p, p_0 in zip(controller.parameters(), params):
-        p.data.copy_(p_0)
-
-class RolloutGenerator(object):
-    """ Utility to generate rollouts.
-
-    Encapsulate everything that is needed to generate rollouts in the TRUE ENV
-    using a controller with previously trained VAE and MDRNN.
-
-    :attr vae: VAE model loaded from mdir/vae
-    :attr mdrnn: MDRNN model loaded from mdir/mdrnn
-    :attr controller: Controller, either loaded from mdir/ctrl or randomly
-        initialized
-    :attr env: instance of the CarRacing-v0 gym environment
-    :attr device: device used to run VAE, MDRNN and Controller
-    :attr time_limit: rollouts have a maximum of time_limit timesteps
-    """
-    def __init__(self, mdir, device, time_limit):
-        """ Build vae, rnn, controller and environment. """
-        # Loading world model and vae
-        vae_file, rnn_file, ctrl_file = \
-            [join(mdir, m, 'best.tar') for m in ['vae', 'mdrnn', 'ctrl']]
-
-        assert exists(vae_file) and exists(rnn_file),\
-            "Either vae or mdrnn is untrained."
-
-        vae_state, rnn_state = [
-            torch.load(fname, map_location={'cuda:0': str(device)})
-            for fname in (vae_file, rnn_file)]
-
-        for m, s in (('VAE', vae_state), ('MDRNN', rnn_state)):
-            print("Loading {} at epoch {} "
-                  "with test loss {}".format(
-                      m, s['epoch'], s['precision']))
-
-        self.vae = VAE(3, LSIZE).to(device)
-        self.vae.load_state_dict(vae_state['state_dict'])
-
-        self.mdrnn = MDRNNCell(LSIZE, ASIZE, RSIZE, 5).to(device)
-        self.mdrnn.load_state_dict(
-            {k.strip('_l0'): v for k, v in rnn_state['state_dict'].items()})
-
-        self.controller = Controller(LSIZE, RSIZE, ASIZE).to(device)
-
-        # load controller if it was previously saved
-        if exists(ctrl_file):
-            ctrl_state = torch.load(ctrl_file, map_location={'cuda:0': str(device)})
-            print("Loading Controller with reward {}".format(
-                ctrl_state['reward']))
-            self.controller.load_state_dict(ctrl_state['state_dict'])
-
-        self.env = gym.make('CarRacing-v0')
-        self.device = device
-
-        self.time_limit = time_limit
-
-    def get_action_and_transition(self, obs, hidden):
-        """ Get action and transition.
-
-        Encode obs to latent using the VAE, then obtain estimation for next
-        latent and next hidden state using the MDRNN and compute the controller
-        corresponding action.
-
-        :args obs: current observation (1 x 3 x 64 x 64) torch tensor
-        :args hidden: current hidden state (1 x 256) torch tensor
-
-        :returns: (action, next_hidden)
-            - action: 1D np array
-            - next_hidden (1 x 256) torch tensor
-        """
-        _, latent_mu, _ = self.vae(obs)
-        action = self.controller(latent_mu, hidden[0])
-        _, _, _, _, _, next_hidden = self.mdrnn(action, latent_mu, hidden)
-        return action.squeeze().cpu().numpy(), next_hidden
-
-    def rollout(self, params):
-        """ Execute a rollout and returns minus cumulative reward.
-
-        Load :params: into the controller and execute a single rollout. This
-        is the main API of this class.
-
-        :args params: parameters as a single 1D np array
-
-        :returns: minus cumulative reward
-        """
-        # copy params into the controller
-        if params is not None:
-            load_parameters(params, self.controller)
-
-        obs = self.env.reset()
-        hidden = [
-            torch.zeros(1, RSIZE).to(self.device)
-            for _ in range(2)]
-
-        cumulative = 0
-        i = 0
-        while True:
-            self.env.render()
-            obs = transform(obs).unsqueeze(0).to(self.device)
-            action, hidden = self.get_action_and_transition(obs, hidden)
-            obs, reward, done, _ = self.env.step(action)
-            cumulative += reward
-            if done or i > self.time_limit:
-                return - cumulative
-            i += 1
-
-
-
-class EarlyStopping(object):
-    """
-    Gives a criterion to stop training when a given metric is not 
+    Gives a criterion to stop training when a given metric is not
     improving anymore
     Args:
-        mode (str): One of `min`, `max`. In `min` mode, lr will
-            be reduced when the quantity monitored has stopped
-            decreasing; in `max` mode it will be reduced when the
+        mode (str): One of `min`, `max`. In `min` mode, training will
+            be stopped when the quantity monitored has stopped
+            decreasing; in `max` mode it will be stopped when the
             quantity monitored has stopped increasing. Default: 'min'.
         patience (int): Number of epochs with no improvement after
-            which learning rate will be reduced. For example, if
+            which training is stopped. For example, if
             `patience = 2`, then we will ignore the first 2 epochs
-            with no improvement, and will only decrease the LR after the
+            with no improvement, and will only stop learning after the
             3rd epoch if the loss still hasn't improved then.
             Default: 10.
         threshold (float): Threshold for measuring the new optimum,
@@ -236,6 +47,7 @@ class EarlyStopping(object):
         self.num_bad_epochs = 0
 
     def step(self, metrics, epoch=None):
+        """ Updates early stopping state """
         current = metrics
         if epoch is None:
             epoch = self.last_epoch = self.last_epoch + 1
@@ -249,10 +61,11 @@ class EarlyStopping(object):
 
     @property
     def stop(self):
+        """ Should we stop learning? """
         return self.num_bad_epochs > self.patience
 
 
-    def _cmp(self, mode, threshold_mode, threshold, a, best):
+    def _cmp(self, mode, threshold_mode, threshold, a, best): # pylint: disable=R0913, R0201
         if mode == 'min' and threshold_mode == 'rel':
             rel_epsilon = 1. - threshold
             return a < best * rel_epsilon
@@ -264,8 +77,7 @@ class EarlyStopping(object):
             rel_epsilon = threshold + 1.
             return a > best * rel_epsilon
 
-        else:  # mode == 'max' and epsilon_mode == 'abs':
-            return a > best + threshold
+        return a > best + threshold
 
     def _init_is_better(self, mode, threshold, threshold_mode):
         if mode not in {'min', 'max'}:
@@ -281,11 +93,14 @@ class EarlyStopping(object):
         self.is_better = partial(self._cmp, mode, threshold_mode, threshold)
 
     def state_dict(self):
+        """ Returns early stopping state """
         return {key: value for key, value in self.__dict__.items() if key != 'is_better'}
 
     def load_state_dict(self, state_dict):
+        """ Loads early stopping state """
         self.__dict__.update(state_dict)
-        self._init_is_better(mode=self.mode, threshold=self.threshold, threshold_mode=self.threshold_mode)
+        self._init_is_better(mode=self.mode, threshold=self.threshold,
+                             threshold_mode=self.threshold_mode)
 
 
 
@@ -294,8 +109,7 @@ class EarlyStopping(object):
 ####  TO BE REMOVED WITH PYTORCH 0.5                   #####
 #### IT IS COPY OF THE 0.5 VERSION OF THE LR SCHEDULER #####
 ############################################################
-from torch.optim import Optimizer
-class ReduceLROnPlateau(object):
+class ReduceLROnPlateau(object): # pylint: disable=R0902
     """Reduce learning rate when a metric has stopped improving.
     Models often benefit from reducing the learning rate by a factor
     of 2-10 once learning stagnates. This scheduler reads a metrics
@@ -344,7 +158,7 @@ class ReduceLROnPlateau(object):
         >>>     scheduler.step(val_loss)
     """
 
-    def __init__(self, optimizer, mode='min', factor=0.1, patience=10,
+    def __init__(self, optimizer, mode='min', factor=0.1, patience=10, # pylint: disable=R0913
                  verbose=False, threshold=1e-4, threshold_mode='rel',
                  cooldown=0, min_lr=0, eps=1e-8):
 
@@ -357,7 +171,7 @@ class ReduceLROnPlateau(object):
                 type(optimizer).__name__))
         self.optimizer = optimizer
 
-        if isinstance(min_lr, list) or isinstance(min_lr, tuple):
+        if isinstance(min_lr, (list, tuple)):
             if len(min_lr) != len(optimizer.param_groups):
                 raise ValueError("expected {} min_lrs, got {}".format(
                     len(optimizer.param_groups), len(min_lr)))
@@ -389,6 +203,7 @@ class ReduceLROnPlateau(object):
         self.num_bad_epochs = 0
 
     def step(self, metrics, epoch=None):
+        """ Updates scheduler state """
         current = metrics
         if epoch is None:
             epoch = self.last_epoch = self.last_epoch + 1
@@ -421,9 +236,10 @@ class ReduceLROnPlateau(object):
 
     @property
     def in_cooldown(self):
+        """ Are we on CD? """
         return self.cooldown_counter > 0
 
-    def _cmp(self, mode, threshold_mode, threshold, a, best):
+    def _cmp(self, mode, threshold_mode, threshold, a, best): # pylint: disable=R0913,R0201
         if mode == 'min' and threshold_mode == 'rel':
             rel_epsilon = 1. - threshold
             return a < best * rel_epsilon
@@ -435,8 +251,7 @@ class ReduceLROnPlateau(object):
             rel_epsilon = threshold + 1.
             return a > best * rel_epsilon
 
-        else:  # mode == 'max' and epsilon_mode == 'abs':
-            return a > best + threshold
+        return a > best + threshold
 
     def _init_is_better(self, mode, threshold, threshold_mode):
         if mode not in {'min', 'max'}:
@@ -452,8 +267,12 @@ class ReduceLROnPlateau(object):
         self.is_better = partial(self._cmp, mode, threshold_mode, threshold)
 
     def state_dict(self):
-        return {key: value for key, value in self.__dict__.items() if key not in {'optimizer', 'is_better'}}
+        """ Returns scheduler state """
+        return {key: value for key, value in self.__dict__.items()
+                if key not in {'optimizer', 'is_better'}}
 
     def load_state_dict(self, state_dict):
+        """ Loads scheduler state """
         self.__dict__.update(state_dict)
-        self._init_is_better(mode=self.mode, threshold=self.threshold, threshold_mode=self.threshold_mode)
+        self._init_is_better(mode=self.mode, threshold=self.threshold,
+                             threshold_mode=self.threshold_mode)
