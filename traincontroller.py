@@ -23,8 +23,6 @@ from utils.misc import flatten_parameters
 # parsing
 parser = argparse.ArgumentParser()
 parser.add_argument('--logdir', type=str, help='Where everything is stored.')
-parser.add_argument('--noreload', action='store_true',
-                    help="Do not reload if specified.")
 args = parser.parse_args()
 
 
@@ -102,6 +100,36 @@ e_queue = Queue()
 for p_index in range(num_workers):
     Process(target=slave_routine, args=(p_queue, r_queue, e_queue, p_index)).start()
 
+
+################################################################################
+#                           Evaluation                                         #
+################################################################################
+def evaluate(solutions, results, rollouts=100):
+    """ Give current controller evaluation.
+
+    Evaluation is minus the cumulated reward averaged over rollout runs.
+
+    :args solutions: CMA set of solutions
+    :args results: corresponding results
+    :args rollouts: number of rollouts
+
+    :returns: minus averaged cumulated reward
+    """
+    index_min = np.argmin(results)
+    best_guess = solutions[index_min]
+    restimates = []
+
+    for s_id in range(rollouts):
+        p_queue.put((s_id, best_guess))
+
+    print("Evaluating...")
+    for _ in tqdm(range(rollouts)):
+        while r_queue.empty():
+            sleep(.1)
+        restimates.append(r_queue.get()[1])
+
+    return best_guess, np.mean(restimates), np.std(restimates)
+
 ################################################################################
 #                           Launch CMA                                         #
 ################################################################################
@@ -113,11 +141,12 @@ es = cma.CMAEvolutionStrategy(flatten_parameters(parameters), 0.1,
 # define current best
 cur_best = None
 ctrl_file = join(ctrl_dir, 'best.tar')
-if exists(ctrl_file) and not args.noreload:
+if exists(ctrl_file):
     cur_best = - torch.load(ctrl_file, map_location={'cuda:0': 'cpu'})['reward']
     print("Previous best was {}...".format(-cur_best))
 
 epoch = 0
+log_step = 10
 while not es.stop():
     r_list = [0] * pop_size  # result list
     solutions = es.ask()
@@ -140,18 +169,20 @@ while not es.stop():
     es.tell(solutions, r_list)
     es.disp()
 
-    # save parameters
-    index_best = np.argmin(r_list)
-    best = r_list[index_best]
-    if not cur_best or cur_best > best:
-        cur_best = best
-        print("Saving new best with value {}...".format(-cur_best))
-        load_parameters(solutions[index_best], controller)
-        torch.save(
-            {'epoch': epoch,
-             'reward': - cur_best,
-             'state_dict': controller.state_dict()},
-            join(ctrl_dir, 'best.tar'))
+    # evaluation and saving
+    if epoch % log_step == log_step - 1:
+        best_params, best, std_best = evaluate(solutions, r_list)
+        if not cur_best or cur_best > best:
+            cur_best = best
+            print("Saving new best with value {}+-{}...".format(-cur_best, std_best))
+            load_parameters(best_params, controller)
+            torch.save(
+                {'epoch': epoch,
+                 'reward': - cur_best,
+                 'state_dict': controller.state_dict()},
+                join(ctrl_dir, 'best.tar'))
+
+
     epoch += 1
 
 es.result_pretty()
