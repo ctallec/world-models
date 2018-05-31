@@ -157,7 +157,7 @@ class RolloutGenerator(object):
         _, _, _, _, _, next_hidden = self.mdrnn(action, latent_mu, hidden)
         return action.squeeze().cpu().numpy(), next_hidden
 
-    def rollout(self, params):
+    def rollout(self, params, render=False):
         """ Execute a rollout and returns minus cumulative reward.
 
         Load :params: into the controller and execute a single rollout. This
@@ -172,6 +172,10 @@ class RolloutGenerator(object):
             load_parameters(params, self.controller)
 
         obs = self.env.reset()
+
+        # This first render is required !
+        self.env.render()
+
         hidden = [
             torch.zeros(1, RSIZE).to(self.device)
             for _ in range(2)]
@@ -179,10 +183,13 @@ class RolloutGenerator(object):
         cumulative = 0
         i = 0
         while True:
-            self.env.render()
             obs = transform(obs).unsqueeze(0).to(self.device)
             action, hidden = self.get_action_and_transition(obs, hidden)
             obs, reward, done, _ = self.env.step(action)
+
+            if render:
+                self.env.render()
+
             cumulative += reward
             if done or i > self.time_limit:
                 return - cumulative
