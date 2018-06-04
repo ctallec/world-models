@@ -6,6 +6,10 @@ from torchvision import transforms
 import numpy as np
 from models import MDRNNCell, VAE, Controller
 import gym
+import gym.envs.box2d
+
+# A bit dirty: manually change size of car racing env
+gym.envs.box2d.car_racing.STATE_W, gym.envs.box2d.car_racing.STATE_H = 64, 64
 
 # Hardcoded for now
 ASIZE, LSIZE, RSIZE, RED_SIZE, SIZE =\

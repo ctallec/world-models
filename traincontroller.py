@@ -23,12 +23,15 @@ from utils.misc import flatten_parameters
 # parsing
 parser = argparse.ArgumentParser()
 parser.add_argument('--logdir', type=str, help='Where everything is stored.')
+parser.add_argument('--n-samples', type=int, help='Number of samples used to obtain '
+                    'return estimate.')
+parser.add_argument('--pop-size', type=int, help='Population size.')
 args = parser.parse_args()
 
 
 # multiprocessing variables
-n_samples = 4
-pop_size = 32
+n_samples = args.n_samples
+pop_size = args.pop_size
 num_workers = min(32, n_samples * pop_size)
 time_limit = 1000
 
@@ -134,16 +137,19 @@ def evaluate(solutions, results, rollouts=100):
 #                           Launch CMA                                         #
 ################################################################################
 controller = Controller(LSIZE, RSIZE, ASIZE)  # dummy instance
-parameters = controller.parameters()
-es = cma.CMAEvolutionStrategy(flatten_parameters(parameters), 0.1,
-                              {'popsize': pop_size})
 
-# define current best
+# define current best and load parameters
 cur_best = None
 ctrl_file = join(ctrl_dir, 'best.tar')
 if exists(ctrl_file):
-    cur_best = - torch.load(ctrl_file, map_location={'cuda:0': 'cpu'})['reward']
+    state = torch.load(ctrl_file, map_location={'cuda:0': 'cpu'})
+    cur_best = - state['reward']
+    controller.load_state_dict(state['state_dict'])
     print("Previous best was {}...".format(-cur_best))
+
+parameters = controller.parameters()
+es = cma.CMAEvolutionStrategy(flatten_parameters(parameters), 0.1,
+                              {'popsize': pop_size})
 
 epoch = 0
 log_step = 10
