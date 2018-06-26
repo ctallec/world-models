@@ -32,6 +32,9 @@ On the CarRacing-v0 environment, results were reproducible with relative ease. O
 * **Léonard Blier** - [leonardblier](https://github.com/leonardblier)
 * **Diviyan Kalainathan** - [diviyan-kalainathan](https://github.com/diviyan-kalainathan)
 
+## License
+
+This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details
 
 ## References
 [1] Ha, D. and Schmidhuber, J. World Models, 2018
