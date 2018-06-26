@@ -6,6 +6,7 @@ The implementation is available [here](https://github.com/ctallec/world-models).
 
 
 ## Summary of World Models
+
 *World Models* introduces a *model-based* approach to reinforcement learning. It revolves around a three part model, comprised of:
 
   1. A Variational Auto-Encoder (VAE, Kingma et al., 2014)[2], a generative model, who learns both an encoder and a decoder. The encoder's task is to compress the input images into a compact latent representation. The decoder's task is to recover the original image from the latent representation.
@@ -22,11 +23,13 @@ Alternatively, if the MDN-RNN is good enough at modelling the environment, the c
 
 
 ## Results
+
 On the CarRacing-v0 environment, results were reproducible with relative ease. Our own implementation reached a best score of 860 which is below the 906 reported in the paper, but much better than the second best benchmark reported which is around 780. We believe the gap in the results is related to our reduced computational power, resulting in tamed down hyperparameters for CMA-ES compared to those used in the paper. Gifs displaying the behavior of our best trained model are provided below.
 [TODO] Add results.
 
 
 ## Additional experiments
+
 [TODO] Write up.
 
 
@@ -43,7 +46,12 @@ This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md
 
 
 ## References
+
 [1] Ha, D. and Schmidhuber, J. World Models, 2018
+
 [2] Kingma, D., Auto-Encoding Variational Bayes, 2014
+
 [3] Graves, A., Generating Sequences With Recurrent Neural Networks, 2013
+
 [4] Hansen, N., The CMA evolution strategy: a comparing review, 2006
+
