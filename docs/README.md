@@ -3,7 +3,7 @@
 In this blog post, we are delving into [World
 Models](https://arxiv.org/pdf/1803.10122.pdf) (Ha et al., 2018)[1] a recent
 model based reinforcement learning paper that achieves surprisingly good
-performances on the challenging
+performance on the challenging
 [CarRacing-v0](https://gym.openai.com/envs/CarRacing-v0/) environment.
 
 Along with a short summary of the paper, we provide a [pytorch implementation
@@ -22,7 +22,7 @@ Below is a figure from the original paper explaining the architecture.
 
 ![Architecture]({{"/img/archfig.png" | absolute_url}})
 
-On a given environment, the model is trained sequentially as follow:
+On a given environment, the model is trained sequentially as follows:
   1. Sample randomly generated rollouts from a well suited *random policy*.
   2. Train the VAE on images drawn from the rollouts.
   3. Train the MDN-RNN on the rollouts encoded using the encoder of the VAE. To reduce computational load, we trained the MDN-RNN on fixed size subsequences of the rollouts.
@@ -46,21 +46,25 @@ In the original paper, the authors compare their results with a model without th
 
 | Method | Average score |
 |--------|---------------|
-| Full World Models | 906 ± 21 |
-| without MDRNN | 632 ± 251 |
+| Full World Models (Ha et al., 2018)[1] | 906 ± 21 |
+| without MDRNN (Ha et al., 2018)[1] | 632 ± 251 |
 
 We did an additional experiment and tested the full world model architecture without training the MDRNN, keeping its random initial weights. We obtained the following results :
 
 | Method | Average score |
 |--------|---------------|
-| With a trained MDRNN | 860 ± 120 |
-| With an untrained MDRNN | 870 ± 120 |
+| With a trained MDRNN (Ours) | 860 ± 120 |
+| With an untrained MDRNN (Ours) | 870 ± 120 |
 
 We display the behavior of our best trained model with an untrained MDRNN below.
 
 ![Full model with untrained MDRNN]({{"/img/untrained.gif" | absolute_url}})
 
-It seems that the training of the MDRNN does not improve the performance. Our interpretation of this phenomena is that even if the recurrent model is not able to predict the next state of the environment, its recurrent state still contains some crucial information on the environment dynamic. Without a recurrent model, first-order information such as velocity of the car is absent from individual frames, and consequently from latent codes. Therefore, strategies learnt without the MDRNN cannot use such information. Apparently, even a random MDRNN still keeps some useful temporal information, and that it is enough to learn a good strategy on this problem.
+It seems that the training of the MDRNN does not improve the performance. Our
+interpretation of this phenomenon is that even if the recurrent model is not
+able to predict the next state of the environment, its recurrent state still
+contains some crucial information on the environment dynamic. Without a
+recurrent model, first-order information such as the velocity of the car is absent from individual frames, and consequently from latent codes. Therefore, strategies learnt without the MDRNN cannot use such information. Apparently, even a random MDRNN still holds some useful temporal information, and that it is enough to learn a good strategy on this problem.
 
 
 # Conclusion
@@ -71,7 +75,7 @@ We reproduced the paper "World Models" on the CarRacing environment, and made so
 
 * On the CarRacing-v0 environment, it seems that the recurrent network only serves as a recurrent reservoir, enabling access to crucial higher order information, such as velocity or acceleration. This observation needs some perspective, it comes with several interrogations and remarks:
     * (Ha et al. 2018) reports good results when training in the simulated environment on the VizDoom task. Without a trained recurrent forward model, we cannot expect to obtain such performance.
-    * On CarRacing-v0, the untrained MDRNN already obtains near optimal results. Is the task sufficiently easy to aleviate the need for a good recurrent forward model?
+    * On CarRacing-v0, the untrained MDRNN already obtains near optimal results. Is the task sufficiently easy to alleviate the need for a good recurrent forward model?
     * Learning a good model of a high dimensional environment is hard. It is notably difficult to obtain coherent multi modal behaviors on long time ranges (i.e. predicting two futures, one where the next turn is a right turn, the other where it is a left turn). Visually, despite the latent gaussian mixture model, our model doesn't seem to overcome this difficulty. Is proper handling of multi modal behaviors key to leveraging the usefulness of a model of the world?
 
 # Authors
