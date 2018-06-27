@@ -13,7 +13,7 @@ The implementation is available [here](https://github.com/ctallec/world-models).
   2. A Mixture-Density Recurrent Network (MDN-RNN, Graves, 2013)[3], trained to predict the latent encoding of the next frame given past latent encodings and actions. The mixture-density network outputs a gaussian mixture observational density at each time step, allowing for multi-modal model predictions.
   3. A simple linear Controller (C). It takes as inputs both the latent encoding of the current frame and the hidden state of the MDN-RNN given past latents and actions and outputs an action. It is trained to maximize the cumulated reward using the Covariance-Matrix Adaptation Evolution-Strategy ([CMA-ES](http://www.cmap.polytechnique.fr/~nikolaus.hansen/cmaartic.pdf), Hansen, 2006)[4].
 
-![Architecture]({{ site.url }}/img/arch_fig.png)
+![Architecture]({{"/img/archfig.png" | absolute_url}})
 
 On a given environment, the model is trained sequentially as follow:
   1. Sample randomly generated rollouts from a well suited *random policy*.
