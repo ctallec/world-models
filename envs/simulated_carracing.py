@@ -1,6 +1,7 @@
 """
 Simulated carracing environment.
 """
+import argparse
 from os.path import join, exists
 import torch
 from torch.distributions.categorical import Categorical
@@ -82,9 +83,9 @@ class SimulatedCarracing(gym.Env): # pylint: disable=too-many-instance-attribute
             action = torch.Tensor(action).unsqueeze(0)
             mu, sigma, pi, r, d, n_h = self._rnn(action, self._lstate, self._hstate)
             pi = pi.squeeze()
-            mixt = Categorical(pi).sample().item()
+            mixt = Categorical(torch.exp(pi)).sample().item()
 
-            self._lstate = mu[:, mixt, :] + sigma[:, mixt, :] * torch.randn_like(mu[:, mixt, :])
+            self._lstate = mu[:, mixt, :] # + sigma[:, mixt, :] * torch.randn_like(mu[:, mixt, :])
             self._hstate = n_h
 
             self._obs = self._decoder(self._lstate)
@@ -109,7 +110,13 @@ class SimulatedCarracing(gym.Env): # pylint: disable=too-many-instance-attribute
         plt.pause(.01)
 
 if __name__ == '__main__':
-    env = SimulatedCarracing('logs/exp0')
+    # argument parsing
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--logdir', type=str, help='Directory from which MDRNN and VAE are '
+                        'retrieved.')
+    args = parser.parse_args()
+    env = SimulatedCarracing(args.logdir)
+
     env.reset()
     action = np.array([0., 0., 0.])
 

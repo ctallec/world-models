@@ -26,6 +26,10 @@ parser.add_argument('--logdir', type=str, help='Where everything is stored.')
 parser.add_argument('--n-samples', type=int, help='Number of samples used to obtain '
                     'return estimate.')
 parser.add_argument('--pop-size', type=int, help='Population size.')
+parser.add_argument('--target-return', type=float, help='Stops once the return '
+                    'gets above target_return')
+parser.add_argument('--display', action='store_true', help="Use progress bars if "
+                    "specified.")
 args = parser.parse_args()
 
 
@@ -141,6 +145,7 @@ controller = Controller(LSIZE, RSIZE, ASIZE)  # dummy instance
 # define current best and load parameters
 cur_best = None
 ctrl_file = join(ctrl_dir, 'best.tar')
+print("Attempting to load previous best...")
 if exists(ctrl_file):
     state = torch.load(ctrl_file, map_location={'cuda:0': 'cpu'})
     cur_best = - state['reward']
@@ -152,8 +157,12 @@ es = cma.CMAEvolutionStrategy(flatten_parameters(parameters), 0.1,
                               {'popsize': pop_size})
 
 epoch = 0
-log_step = 10
+log_step = 3
 while not es.stop():
+    if cur_best is not None and - cur_best > args.target_return:
+        print("Already better than target, breaking...")
+        break
+
     r_list = [0] * pop_size  # result list
     solutions = es.ask()
 
@@ -163,14 +172,17 @@ while not es.stop():
             p_queue.put((s_id, s))
 
     # retrieve results
-    pbar = tqdm(total=pop_size * n_samples)
+    if args.display:
+        pbar = tqdm(total=pop_size * n_samples)
     for _ in range(pop_size * n_samples):
         while r_queue.empty():
             sleep(.1)
         r_s_id, r = r_queue.get()
         r_list[r_s_id] += r / n_samples
-        pbar.update(1)
-    pbar.close()
+        if args.display:
+            pbar.update(1)
+    if args.display:
+        pbar.close()
 
     es.tell(solutions, r_list)
     es.disp()
@@ -178,6 +190,7 @@ while not es.stop():
     # evaluation and saving
     if epoch % log_step == log_step - 1:
         best_params, best, std_best = evaluate(solutions, r_list)
+        print("Current evaluation: {}".format(best))
         if not cur_best or cur_best > best:
             cur_best = best
             print("Saving new best with value {}+-{}...".format(-cur_best, std_best))
@@ -187,6 +200,9 @@ while not es.stop():
                  'reward': - cur_best,
                  'state_dict': controller.state_dict()},
                 join(ctrl_dir, 'best.tar'))
+        if - best > args.target_return:
+            print("Terminating controller training with value {}...".format(best))
+            break
 
 
     epoch += 1
