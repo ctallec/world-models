@@ -1,11 +1,11 @@
-# Pytorch implementation of the "WorldModels"
 
-This page presents a reimplementation of the paper [World Models](https://arxiv.org/pdf/1803.10122.pdf)
-(Ha et al., 2018)[1] in pytorch on the [CarRacing-v0](https://gym.openai.com/envs/CarRacing-v0/) environment.
+
+This page presents a reproduction of the paper [World Models](https://arxiv.org/pdf/1803.10122.pdf)
+(Ha et al., 2018)[1] in pytorch on the [CarRacing-v0](https://gym.openai.com/envs/CarRacing-v0/) environment, with additional experiments on the impact of the recurrent network.
 The implementation is available [here](https://github.com/ctallec/world-models).
 
 
-## Summary of World Models
+# Summary of World Models
 
 *World Models* introduces a *model-based* approach to reinforcement learning. It revolves around a three part model, comprised of:
 
@@ -26,7 +26,7 @@ On a given environment, the model is trained sequentially as follow:
 Alternatively, if the MDN-RNN is good enough at modelling the environment, the controller can be trained directly on simulated rollouts in the dreamt environment.
 
 
-## Reproductibility on the CarRacing environment
+# Reproductibility on the CarRacing environment
 
 On the CarRacing-v0 environment, results were reproducible with relative ease. We were pleasantly surprised to observe that the model achieved good results the first time, since it is well-known that many reinforcement learning results are hard to reproduce, and not stable [5]. Our own implementation reached a best score of 860 which is below the 906 reported in the paper, but much better than the second best benchmark reported which is around 780. We believe the gap in the results is related to our reduced computational power, resulting in tamed down hyperparameters for CMA-ES compared to those used in the paper. Gifs displaying the behavior of our best trained model are provided below.
 [TODO] Add results.
@@ -34,7 +34,7 @@ On the CarRacing-v0 environment, results were reproducible with relative ease. W
 
 ![Full model with trained MDRNN]({{"/img/trained.gif" | absolute_url}})
 
-## Additional experiments
+# Additional experiments
 
 We wanted to test the impact of the MDRNN on the results. Indeed, we observed during training that the final loss of the recurrent network was high :
 
@@ -64,7 +64,7 @@ We display the behavior of our best trained model with an untrained MDRNN below.
 It seems that the training of the MDRNN does not improve the performance. Our interpretation of this phenomena is that even if the recurrent model is not able to predict the next state of the environment, its outputs contains some necessary informations for the problem. The first-order informations such as the velocity of the car are not contained in a single frame. Therefore, a strategy learned without the MDRNN cannot use it. But it seems reasonable that even a random MDRNN still keeps some information on the velocity, and that it is enough for learning a good strategy on this problem.
 
 
-## Conclusion
+# Conclusion
 
 We reproduced the paper "World Models" on the CarRacing environment, and made some additional experiments. We have two observations :
 
@@ -73,19 +73,19 @@ We reproduced the paper "World Models" on the CarRacing environment, and made so
 * It seems that the recurrent network .. [TODO]
 
 
-## Authors
+# Authors
 
 * **Corentin Tallec** - [ctallec](https://github.com/ctallec)
 * **Léonard Blier** - [leonardblier](https://github.com/leonardblier)
 * **Diviyan Kalainathan** - [diviyan-kalainathan](https://github.com/diviyan-kalainathan)
 
 
-## License
+# License
 
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details
 
 
-## References
+# References
 
 [1] Ha, D. and Schmidhuber, J. World Models, 2018
 
