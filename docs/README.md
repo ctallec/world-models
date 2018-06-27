@@ -54,7 +54,7 @@ We did an additional experiment and tested the full world model architecture wit
 | Method | Average score |
 |--------|---------------|
 | With a trained MDRNN | 860 ± 71 |
-| With an untrained MDRNN | TODO |
+| With an untrained MDRNN | 870 ± 120 |
 
 We display the behavior of our best trained model with an untrained MDRNN below.
 
