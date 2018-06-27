@@ -13,7 +13,7 @@ The implementation is available [here](https://github.com/ctallec/world-models).
   2. A Mixture-Density Recurrent Network (MDN-RNN, Graves, 2013)[3], trained to predict the latent encoding of the next frame given past latent encodings and actions. The mixture-density network outputs a gaussian mixture observational density at each time step, allowing for multi-modal model predictions.
   3. A simple linear Controller (C). It takes as inputs both the latent encoding of the current frame and the hidden state of the MDN-RNN given past latents and actions and outputs an action. It is trained to maximize the cumulated reward using the Covariance-Matrix Adaptation Evolution-Strategy ([CMA-ES](http://www.cmap.polytechnique.fr/~nikolaus.hansen/cmaartic.pdf), Hansen, 2006)[4].
 
-    ![Architecture (ADD CAPTION AND REF)]({{ "../img/arch_fig.png"}})
+    ![Architecture (ADD CAPTION AND REF)](/img/arch_fig.png)
 On a given environment, the model is trained sequentially as follow:
   1. Sample randomly generated rollouts from a well suited *random policy*.
   2. Train the VAE on images drawn from the rollouts.
@@ -29,7 +29,7 @@ On the CarRacing-v0 environment, results were reproducible with relative ease. W
 [TODO] Add results.
 
 
-![Architecture (ADD CAPTION AND REF)]({{ "../img/trained.gif"}})
+![Architecture (ADD CAPTION AND REF)](/img/trained.gif)
 ## Additional experiments
 
 We wanted to test the impact of the MDRNN on the results. Indeed, we observed during training that the final loss of the recurrent network was high :
@@ -53,7 +53,7 @@ We did an additional experiment. We tested the full world model architecture, bu
 | With a trained MDRNN | TODO |
 | With an untrained MDRNN | TODO |
 
-![Architecture (ADD CAPTION AND REF)]({{ "../img/untrained.gif"}})
+![Architecture (ADD CAPTION AND REF)](/img/untrained.gif)
 
 It seems that the training of the MDRNN does not improve the performance. Our interpretation of this phenomena is that even if the recurrent model is not able to predict the next state of the environment, its outputs contains some necessary informations for the problem. The first-order informations such as the velocity of the car are not contained in a single frame. Therefore, a strategy learned without the MDRNN cannot use it. But it seems reasonable that even a random MDRNN still keeps some information on the velocity, and that it is enough for learning a good strategy on this problem.
 
