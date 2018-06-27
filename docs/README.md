@@ -30,7 +30,7 @@ On the CarRacing-v0 environment, results were reproducible with relative ease. W
 [TODO] Add results.
 
 
-![Full model with trained MDRNN]({{ site.url }}/img/trained.gif)
+![Full model with trained MDRNN]({{"/img/trained.gif" | absolute_url}})
 
 ## Additional experiments
 
@@ -55,7 +55,7 @@ We did an additional experiment. We tested the full world model architecture, bu
 | With a trained MDRNN | TODO |
 | With an untrained MDRNN | TODO |
 
-![Full model with untrained MDRNN]({{ site.url }}/img/untrained.gif)
+![Full model with untrained MDRNN]({{"/img/untrained.gif" | absolute_url}})
 
 It seems that the training of the MDRNN does not improve the performance. Our interpretation of this phenomena is that even if the recurrent model is not able to predict the next state of the environment, its outputs contains some necessary informations for the problem. The first-order informations such as the velocity of the car are not contained in a single frame. Therefore, a strategy learned without the MDRNN cannot use it. But it seems reasonable that even a random MDRNN still keeps some information on the velocity, and that it is enough for learning a good strategy on this problem.
 
