@@ -29,7 +29,7 @@ Before launching the VAE and MDN-RNN training scripts, you need to generate a da
 
 Data generation is handled through the `data/generation_script.py` script, e.g.
 ```bash
-python data/generation_script.py --rollouts 1000 --dir datasets/carracing --threads 8
+python data/generation_script.py --rollouts 1000 --rootdir datasets/carracing --threads 8
 ```
 
 Rollouts are generated using a *brownian* random policy, instead of the *white noise* random `action_space.sample()` policy from gym, providing more consistent rollouts.
