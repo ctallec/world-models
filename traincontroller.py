@@ -30,13 +30,16 @@ parser.add_argument('--target-return', type=float, help='Stops once the return '
                     'gets above target_return')
 parser.add_argument('--display', action='store_true', help="Use progress bars if "
                     "specified.")
+parser.add_argument('--max-workers', type=int, help='Maximum number of workers.',
+                    default=32)
 args = parser.parse_args()
 
+# Max number of workers. M
 
 # multiprocessing variables
 n_samples = args.n_samples
 pop_size = args.pop_size
-num_workers = min(32, n_samples * pop_size)
+num_workers = min(args.max_workers, n_samples * pop_size)
 time_limit = 1000
 
 # create tmp dir if non existent and clean it if existent
