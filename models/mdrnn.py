@@ -97,7 +97,7 @@ class MDRNN(_MDRNNBase):
 
         pi = gmm_outs[:, :, 2 * stride: 2 * stride + self.gaussians]
         pi = pi.view(seq_len, bs, self.gaussians)
-        logpi = f.log_softmax(pi, dim=-2)
+        logpi = f.log_softmax(pi, dim=-1)
 
         rs = gmm_outs[:, :, -2]
 
