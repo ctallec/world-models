@@ -5,3 +5,4 @@ __pycache__
 dock.sh
 Dockerfile
 frames/
+dock_config.json
