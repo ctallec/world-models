@@ -6,3 +6,4 @@ dock.sh
 Dockerfile
 frames/
 dock_config.json
+.mypy_cache
