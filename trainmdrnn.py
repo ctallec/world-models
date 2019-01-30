@@ -12,7 +12,7 @@ from tqdm import tqdm
 from utils.misc import save_checkpoint
 from utils.misc import ASIZE, LSIZE, RSIZE, RED_SIZE, SIZE
 from utils.learning import EarlyStopping
-## WARNING : THIS SHOULD BE REPLACE WITH PYTORCH 0.5
+## WARNING : THIS SHOULD BE REPLACED WITH PYTORCH 0.5
 from utils.learning import ReduceLROnPlateau
 
 from data.loaders import RolloutSequenceDataset
