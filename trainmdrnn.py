@@ -24,6 +24,8 @@ parser.add_argument('--logdir', type=str,
                     help="Where things are logged and models are loaded from.")
 parser.add_argument('--noreload', action='store_true',
                     help="Do not reload if specified.")
+parser.add_argument('--include_reward', action='store_true',
+                    help="Add a reward modelisation term to the loss.")
 args = parser.parse_args()
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -104,7 +106,8 @@ def to_latent(obs, next_obs):
             [(obs_mu, obs_logsigma), (next_obs_mu, next_obs_logsigma)]]
     return latent_obs, latent_next_obs
 
-def get_loss(latent_obs, action, reward, terminal, latent_next_obs):
+def get_loss(latent_obs, action, reward, terminal,
+             latent_next_obs, include_reward: bool):
     """ Compute losses.
 
     The loss that is computed is:
@@ -131,12 +134,17 @@ def get_loss(latent_obs, action, reward, terminal, latent_next_obs):
     mus, sigmas, logpi, rs, ds = mdrnn(action, latent_obs)
     gmm = gmm_loss(latent_next_obs, mus, sigmas, logpi)
     bce = f.binary_cross_entropy_with_logits(ds, terminal)
-    mse = f.mse_loss(rs, reward)
-    loss = (gmm + bce + mse) / (LSIZE + 2)
+    if include_reward:
+        mse = f.mse_loss(rs, reward)
+        scale = LSIZE + 2
+    else:
+        mse = 0
+        scale = LSIZE + 1
+    loss = (gmm + bce + mse) / scale
     return dict(gmm=gmm, bce=bce, mse=mse, loss=loss)
 
 
-def data_pass(epoch, train): # pylint: disable=too-many-locals
+def data_pass(epoch, train, include_reward): # pylint: disable=too-many-locals
     """ One pass through the data """
     if train:
         mdrnn.train()
@@ -161,7 +169,7 @@ def data_pass(epoch, train): # pylint: disable=too-many-locals
 
         if train:
             losses = get_loss(latent_obs, action, reward,
-                              terminal, latent_next_obs)
+                              terminal, latent_next_obs, include_reward)
 
             optimizer.zero_grad()
             losses['loss'].backward()
@@ -169,12 +177,13 @@ def data_pass(epoch, train): # pylint: disable=too-many-locals
         else:
             with torch.no_grad():
                 losses = get_loss(latent_obs, action, reward,
-                                  terminal, latent_next_obs)
+                                  terminal, latent_next_obs, include_reward)
 
         cum_loss += losses['loss'].item()
         cum_gmm += losses['gmm'].item()
         cum_bce += losses['bce'].item()
-        cum_mse += losses['mse'].item()
+        cum_mse += losses['mse'].item() if hasattr(losses['mse'], 'item') else \
+            losses['mse']
 
         pbar.set_postfix_str("loss={loss:10.6f} bce={bce:10.6f} "
                              "gmm={gmm:10.6f} mse={mse:10.6f}".format(
@@ -184,8 +193,9 @@ def data_pass(epoch, train): # pylint: disable=too-many-locals
     pbar.close()
     return cum_loss * BSIZE / len(loader.dataset)
 
-train = partial(data_pass, train=True)
-test = partial(data_pass, train=False)
+
+train = partial(data_pass, train=True, include_reward=args.include_reward)
+test = partial(data_pass, train=False, include_reward=args.include_reward)
 
 for e in range(epochs):
     cur_best = None
