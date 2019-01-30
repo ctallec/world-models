@@ -51,6 +51,8 @@ class _RolloutDataset(torch.utils.data.Dataset): # pylint: disable=too-few-publi
     def __len__(self):
         # to have a full sequence, you need self.seq_len + 1 elements, as
         # you must produce both an seq_len obs and seq_len next_obs sequences
+        if not self._cum_size:
+            self.load_next_buffer()
         return self._cum_size[-1]
 
     def __getitem__(self, i):
