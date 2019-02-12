@@ -103,7 +103,7 @@ class RolloutGenerator(object):
     :attr device: device used to run VAE, MDRNN and Controller
     :attr time_limit: rollouts have a maximum of time_limit timesteps
     """
-    def __init__(self, mdir, device, time_limit):
+    def __init__(self, mdir, device, time_limit, logger):
         """ Build vae, rnn, controller and environment. """
         # Loading world model and vae
         vae_file, rnn_file, ctrl_file = \
@@ -117,7 +117,7 @@ class RolloutGenerator(object):
             for fname in (vae_file, rnn_file)]
 
         for m, s in (('VAE', vae_state), ('MDRNN', rnn_state)):
-            print("Loading {} at epoch {} "
+            logger.info("Loading {} at epoch {} "
                   "with test loss {}".format(
                       m, s['epoch'], s['precision']))
 
@@ -133,7 +133,7 @@ class RolloutGenerator(object):
         # load controller if it was previously saved
         if exists(ctrl_file):
             ctrl_state = torch.load(ctrl_file, map_location={'cuda:0': str(device)})
-            print("Loading Controller with reward {}".format(
+            logger.info("Loading Controller with reward {}".format(
                 ctrl_state['reward']))
             self.controller.load_state_dict(ctrl_state['state_dict'])
 

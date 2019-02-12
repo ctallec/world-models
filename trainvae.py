@@ -39,9 +39,11 @@ cuda = torch.cuda.is_available()
 
 
 # torch.manual_seed(123)
+# torch.backends.cudnn.enabled = False               
+torch.backends.cudnn.benchmark=True
+
 
 device = torch.device("cuda" if cuda else "cpu")
-# device = torch.device("cpu")
 
 transform_train = transforms.Compose([
     transforms.ToPILImage(),
@@ -50,20 +52,20 @@ transform_train = transforms.Compose([
     transforms.ToTensor(),
 ])
 
-# transform_test = transforms.Compose([
-#     transforms.ToPILImage(),
-#     transforms.Resize((RED_SIZE, RED_SIZE)),
-#     transforms.ToTensor(),
-# ])
+transform_test = transforms.Compose([
+    transforms.ToPILImage(),
+    transforms.Resize((RED_SIZE, RED_SIZE)),
+    transforms.ToTensor(),
+])
 
 dataset_train = RolloutObservationDataset('datasets/carracing',
                                           transform_train, train=True)
-# dataset_test = RolloutObservationDataset('datasets/carracing',
-#                                          transform_test, train=False)
+dataset_test = RolloutObservationDataset('datasets/carracing',
+                                         transform_test, train=False)
 train_loader = torch.utils.data.DataLoader(
     dataset_train, batch_size=args.batch_size, shuffle=True, num_workers=2)
-# test_loader = torch.utils.data.DataLoader(
-#     dataset_test, batch_size=args.batch_size, shuffle=True, num_workers=2)
+test_loader = torch.utils.data.DataLoader(
+    dataset_test, batch_size=args.batch_size, shuffle=True, num_workers=2)
 
 
 model = VAE(3, LSIZE).to(device)
@@ -141,25 +143,25 @@ if not exists(vae_dir):
     mkdir(join(vae_dir, 'samples'))
 
 reload_file = join(vae_dir, 'best.tar')
-# if not args.noreload and exists(reload_file):
-#     state = torch.load(reload_file)
-#     print("Reloading model at epoch {}"
-#           ", with test error {}".format(
-#               state['epoch'],
-#               state['precision']))
-#     model.load_state_dict(state['state_dict'])
-#     optimizer.load_state_dict(state['optimizer'])
-#     scheduler.load_state_dict(state['scheduler'])
-#     earlystopping.load_state_dict(state['earlystopping'])
+if not args.noreload and exists(reload_file):
+    state = torch.load(reload_file)
+    print("Reloading model at epoch {}"
+          ", with test error {}".format(
+              state['epoch'],
+              state['precision']))
+    model.load_state_dict(state['state_dict'])
+    optimizer.load_state_dict(state['optimizer'])
+    scheduler.load_state_dict(state['scheduler'])
+    earlystopping.load_state_dict(state['earlystopping'])
 
 
 cur_best = None
 
 for epoch in range(1, args.epochs + 1):
     train(epoch)
-    # test_loss = test()
-    # scheduler.step(test_loss)
-    # earlystopping.step(test_loss)
+    test_loss = test()
+    scheduler.step(test_loss)
+    earlystopping.step(test_loss)
 
     # checkpointing
     best_filename = join(vae_dir, 'best.tar')
