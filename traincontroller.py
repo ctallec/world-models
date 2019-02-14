@@ -88,60 +88,60 @@ def slave_routine(p_queue, r_queue, e_queue, p_index, logdir):
         logger.error(f"Fatal error in process {p_index}", exc_info=True)
 
 
-def mpify(target, num_workers, nruns, parameters, args_target, logger, margin=2, display=False):
-    p_queue = mp.Queue()
-    r_queue = mp.Queue()
-    e_queue = mp.Queue()
+# def mpify(target, num_workers, nruns, parameters, args_target, logger, margin=2, display=False):
+#     p_queue = mp.Queue()
+#     r_queue = mp.Queue()
+#     e_queue = mp.Queue()
 
-    # torch.multiprocessing.spawn(fn=slave_routine, args=(p_queue, r_queue, e_queue), 
-    #     nprocs=num_workers, join=False)
-    process_list = []
-    for p_index in range(num_workers):
-        p = mp.Process(target=slave_routine, args=(p_queue, r_queue, e_queue, p_index, *args_target))
-        process_list.append(p)
-        p.start()
-        # mp.Process(target=slave_routine, args=(p_queue, r_queue, e_queue, p_index, *args_target)).start()
+#     # torch.multiprocessing.spawn(fn=slave_routine, args=(p_queue, r_queue, e_queue), 
+#     #     nprocs=num_workers, join=False)
+#     process_list = []
+#     for p_index in range(num_workers):
+#         p = mp.Process(target=slave_routine, args=(p_queue, r_queue, e_queue, p_index, *args_target))
+#         process_list.append(p)
+#         p.start()
+#         # mp.Process(target=slave_routine, args=(p_queue, r_queue, e_queue, p_index, *args_target)).start()
 
 
 
-    results = [[] for _ in parameters]
-    for s_id, s in enumerate(parameters):
-        for _ in range(n_samples + margin):
-            p_queue.put((s_id, s))
+#     results = [[] for _ in parameters]
+#     for s_id, s in enumerate(parameters):
+#         for _ in range(n_samples + margin):
+#             p_queue.put((s_id, s))
     
 
-    if display:
-        pbar = tqdm(total=len(parameters) * nruns)
+#     if display:
+#         pbar = tqdm(total=len(parameters) * nruns)
 
-    count = 0
-    while any(len(r_list) < nruns for r_list in results):
-        if p_queue.empty():
-            for idx, p in sorted(enumerate(parameters), key= lambda idx_p: len(results[idx_p[0]])):
-                if len(results[idx]) >= nruns:
-                    break
-                p_queue.put((s_id, s))
+#     count = 0
+#     while any(len(r_list) < nruns for r_list in results):
+#         if p_queue.empty():
+#             for idx, p in sorted(enumerate(parameters), key= lambda idx_p: len(results[idx_p[0]])):
+#                 if len(results[idx]) >= nruns:
+#                     break
+#                 p_queue.put((s_id, s))
 
-        # for t in range(pop_size * n_samples):
-        # logger.info(f"{count}/{len(parameters) * nruns}")
-        while r_queue.empty():
-            sleep(.1)
-        r_s_id, r = r_queue.get()
+#         # for t in range(pop_size * n_samples):
+#         # logger.info(f"{count}/{len(parameters) * nruns}")
+#         while r_queue.empty():
+#             sleep(.1)
+#         r_s_id, r = r_queue.get()
 
-        if len(results[r_s_id]) < nruns:
-            results[r_s_id].append(r)
-            if args.display:
-                pbar.update(1)
-            count += 1
+#         if len(results[r_s_id]) < nruns:
+#             results[r_s_id].append(r)
+#             if args.display:
+#                 pbar.update(1)
+#             count += 1
         
-    e_queue.put('EOP')
-    sleep(1.)
-    for p in process_list:
-        p.terminate()            
+#     e_queue.put('EOP')
+#     sleep(1.)
+#     for p in process_list:
+#         p.terminate()            
 
-    if args.display:
-        pbar.close()
+#     if args.display:
+#         pbar.close()
 
-    return results
+#     return results
 
         
     
@@ -151,7 +151,7 @@ def mpify(target, num_workers, nruns, parameters, args_target, logger, margin=2,
 ################################################################################
 #                           Evaluation                                         #
 ################################################################################
-def evaluate(param, rollouts):
+def evaluate(param, rollouts, p_queue, r_queue):
     """ Give current controller evaluation.
 
     Evaluation is minus the cumulated reward averaged over rollout runs.
@@ -165,44 +165,44 @@ def evaluate(param, rollouts):
     mainlogger.info("Evaluating...")
     # index_min = np.argmin(results)
     # best_guess = solutions[index_min]
-    results = mpify(target=slave_routine, num_workers=args.max_workers, nruns=rollouts, 
-        parameters=[param], args_target=(args.logdir,), logger=mainlogger, 
-        display=args.display)
+    # results = mpify(target=slave_routine, num_workers=args.max_workers, nruns=rollouts, 
+    #     parameters=[param], args_target=(args.logdir,), logger=mainlogger, 
+    #     display=args.display)
     
-    assert len(results) == 1
-    results = np.array(results[0])
+    # assert len(results) == 1
+    # results = np.array(results[0])
 
-    # restimates = []
+    results = []
 
-    # for s_id in range(rollouts):
-    #     p_queue.put((s_id, best_guess))
+    for s_id in range(rollouts):
+        p_queue.put((s_id, param))
 
     
-    # for _ in tqdm(range(rollouts)):
-    #     while r_queue.empty():
-    #         sleep(.1)
-    #     restimates.append(r_queue.get()[1])
+    for _ in tqdm(range(rollouts)):
+        while r_queue.empty():
+            sleep(.1)
+        results.append(r_queue.get()[1])
 
     return np.mean(results), np.std(results)
 
 
 def main():
-    # ################################################################################
-    # #                Define queues and start workers                               #
-    # ################################################################################
-    # p_queue = mp.Queue()
-    # r_queue = mp.Queue()
-    # e_queue = mp.Queue()
+    ################################################################################
+    #                Define queues and start workers                               #
+    ################################################################################
+    p_queue = mp.Queue()
+    r_queue = mp.Queue()
+    e_queue = mp.Queue()
 
-    # # torch.multiprocessing.spawn(fn=slave_routine, args=(p_queue, r_queue, e_queue), 
-    # #     nprocs=num_workers, join=False)
-    # for p_index in range(num_workers):
-    #     mp.Process(target=slave_routine, args=(p_queue, r_queue, e_queue, p_index, args.logdir)).start()
+    # torch.multiprocessing.spawn(fn=slave_routine, args=(p_queue, r_queue, e_queue), 
+    #     nprocs=num_workers, join=False)
+    for p_index in range(num_workers):
+        mp.Process(target=slave_routine, args=(p_queue, r_queue, e_queue, p_index, args.logdir)).start()
 
 
-    # ################################################################################
-    # #                           Launch CMA                                         #
-    # ################################################################################
+    ################################################################################
+    #                           Launch CMA                                         #
+    ################################################################################
     controller = Controller(LSIZE, RSIZE, ASIZE)  # dummy instance
 
     # define current best and load parameters
@@ -233,31 +233,31 @@ def main():
         solutions = es.ask()
 
 
-        results = mpify(target=slave_routine, num_workers=args.max_workers, nruns=n_samples, 
-            parameters=solutions, args_target=(args.logdir,), logger=mainlogger, 
-            display=args.display)
-        # # push parameters to queue
-        # mainlogger.info("Put in the queue")
-        # for s_id, s in enumerate(solutions):
-        #     for _ in range(n_samples + 2):
-        #         p_queue.put((s_id, s))
+        # results = mpify(target=slave_routine, num_workers=args.max_workers, nruns=n_samples, 
+        #     parameters=solutions, args_target=(args.logdir,), logger=mainlogger, 
+        #     display=args.display)
+        # push parameters to queue
+        mainlogger.info("Put in the queue")
+        for s_id, s in enumerate(solutions):
+            for _ in range(n_samples + 2):
+                p_queue.put((s_id, s))
 
-        # # retrieve results
-        # if args.display:
-        #     pbar = tqdm(total=pop_size * n_samples)
-        # for t in range(pop_size * n_samples):
-        #     mainlogger.info(f"{t}/{pop_size * n_samples}")
-        #     while r_queue.empty():
-        #         sleep(.1)
-        #     r_s_id, r = r_queue.get()
-        #     r_list[r_s_id] += r / n_samples
-        #     if args.display:
-        #         pbar.update(1)
-        # if args.display:
-        #     pbar.close()
-        # mainlogger.info("Training completed. Now, CMA.")
+        # retrieve results
+        if args.display:
+            pbar = tqdm(total=pop_size * n_samples)
+        for t in range(pop_size * n_samples):
+            mainlogger.info(f"{t}/{pop_size * n_samples}")
+            while r_queue.empty():
+                sleep(.1)
+            r_s_id, r = r_queue.get()
+            r_list[r_s_id] += r / n_samples
+            if args.display:
+                pbar.update(1)
+        if args.display:
+            pbar.close()
+        mainlogger.info("Training completed. Now, CMA.")
 
-        r_list = [np.mean(r) for r in results]
+        # r_list = [np.mean(r) for r in results]
         es.tell(solutions, r_list)
         es.disp()
 
