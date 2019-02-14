@@ -7,6 +7,7 @@ import numpy as np
 from models import MDRNNCell, VAE, Controller
 import gym
 import gym.envs.box2d
+from time import sleep
 
 # A bit dirty: manually change size of car racing env
 gym.envs.box2d.car_racing.STATE_W, gym.envs.box2d.car_racing.STATE_H = 64, 64
@@ -106,15 +107,56 @@ class RolloutGenerator(object):
     def __init__(self, mdir, device, time_limit, logger):
         """ Build vae, rnn, controller and environment. """
         # Loading world model and vae
+        logger.info("init rollout")
         vae_file, rnn_file, ctrl_file = \
             [join(mdir, m, 'best.tar') for m in ['vae', 'mdrnn', 'ctrl']]
 
-        assert exists(vae_file) and exists(rnn_file),\
-            "Either vae or mdrnn is untrained."
+        if not exists(vae_file) and exists(rnn_file):
+            logger.info("Either vae or mdrnn is untrained.")
+            raise AssertionError
+        # assert exists(vae_file) and exists(rnn_file),\
+        #     "Either vae or mdrnn is untrained."
 
-        vae_state, rnn_state = [
-            torch.load(fname, map_location={'cuda:0': str(device)})
-            for fname in (vae_file, rnn_file)]
+        logger.info(f"loading vae and rnn on device {device}")
+
+        vae_state, rnn_state = None, None
+        while vae_state is None:
+            try:
+                logger.info("loading vae")
+                # def mymaplocation(storage, location):
+                #     logger.info(f"location:{location}")
+                #     return str(device)
+                vae_state = torch.load(vae_file, map_location=device)
+                # vae_state = torch.load(vae_file, map_location=mymaplocation)
+                # logger.info("loading rnn")
+                # rnn_state = torch.load(rnn_file, map_location=device)
+            except RuntimeError:
+                logger.info("Oh no, it does not work, lets sleep for a while")
+                sleep(1)
+                continue
+            except Exception:
+                logger.info("wat ?")
+                logger.error(f"Fatal error in Rollout", exc_info=True)
+        while rnn_state is None:
+            try:
+                # logger.info("loading vae")
+                # def mymaplocation(storage, location):
+                #     logger.info(f"location:{location}")
+                #     return str(device)
+                # vae_state = torch.load(vae_file, map_location=device)
+                # vae_state = torch.load(vae_file, map_location=mymaplocation)
+                logger.info("loading rnn")
+                rnn_state = torch.load(rnn_file, map_location=device)
+            except RuntimeError:
+                logger.info("Oh no, it does not work, lets sleep for a while")
+                sleep(1)
+                continue
+            except Exception:
+                logger.info("wat ?")
+                logger.error(f"Fatal error in Rollout", exc_info=True)
+
+
+        logger.info("loading ok")
 
         for m, s in (('VAE', vae_state), ('MDRNN', rnn_state)):
             logger.info("Loading {} at epoch {} "
@@ -139,7 +181,7 @@ class RolloutGenerator(object):
 
         self.env = gym.make('CarRacing-v0')
         self.device = device
-
+        self.logger = logger
         self.time_limit = time_limit
 
     def get_action_and_transition(self, obs, hidden):
@@ -172,20 +214,26 @@ class RolloutGenerator(object):
         :returns: minus cumulative reward
         """
         # copy params into the controller
+        logger = self.logger
         if params is not None:
             load_parameters(params, self.controller)
 
+        logger.info("env reset")
+        logger.info(str(self.env))
         obs = self.env.reset()
 
         # This first render is required !
+        logger.info("env render")
         self.env.render()
 
+        logger.info("init hidden")
         hidden = [
             torch.zeros(1, RSIZE).to(self.device)
             for _ in range(2)]
 
         cumulative = 0
         i = 0
+        logger.info(f"Getting into the loop")
         while True:
             obs = transform(obs).unsqueeze(0).to(self.device)
             action, hidden = self.get_action_and_transition(obs, hidden)
@@ -198,3 +246,6 @@ class RolloutGenerator(object):
             if done or i > self.time_limit:
                 return - cumulative
             i += 1
+        logger.info("End loop")
+
+
