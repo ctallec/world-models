@@ -197,8 +197,8 @@ def data_pass(epoch, train, include_reward): # pylint: disable=too-many-locals
 train = partial(data_pass, train=True, include_reward=args.include_reward)
 test = partial(data_pass, train=False, include_reward=args.include_reward)
 
+cur_best = None
 for e in range(epochs):
-    cur_best = None
     train(e)
     test_loss = test(e)
     scheduler.step(test_loss)
