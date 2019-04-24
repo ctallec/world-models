@@ -145,7 +145,7 @@ class MDRNNCell(_MDRNNBase):
 
         pi = out_full[:, 2 * stride:2 * stride + self.gaussians]
         pi = pi.view(-1, self.gaussians)
-        logpi = f.log_softmax(pi, dim=-2)
+        logpi = f.log_softmax(pi, dim=-1)
 
         r = out_full[:, -2]
 
