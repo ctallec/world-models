@@ -72,7 +72,7 @@ recurrent model, first-order information such as the velocity of the car is abse
 
 We reproduced the paper "World Models" on the CarRacing environment, and made some additional experiments. Overall, our conclusions are twofold:
 
-* The results were easy to reproduce. It probably means that the method on this problem does not only achieve high perforance but is also very stable. This is an important remark for a deep reinforcement learning method.
+* The results were easy to reproduce. It probably means that the method on this problem does not only achieve high performance but is also very stable. This is an important remark for a deep reinforcement learning method.
 
 * On the CarRacing-v0 environment, it seems that the recurrent network only serves as a recurrent reservoir, enabling access to crucial higher order information, such as velocity or acceleration. This observation needs some perspective, it comes with several interrogations and remarks:
     * (Ha et al. 2018) reports good results when training in the simulated environment on the VizDoom task. Without a trained recurrent forward model, we cannot expect to obtain such performance.
