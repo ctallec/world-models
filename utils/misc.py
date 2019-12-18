@@ -107,82 +107,38 @@ class RolloutGenerator(object):
     def __init__(self, mdir, device, time_limit, logger):
         """ Build vae, rnn, controller and environment. """
         # Loading world model and vae
+
         logger.info("init rollout")
+        self.vae = VAE(3, LSIZE).to(device)
+        self.mdrnn = MDRNNCell(LSIZE, ASIZE, RSIZE, 5).to(device)
+        self.controller = Controller(LSIZE, RSIZE, ASIZE).to(device)
+
         vae_file, rnn_file, ctrl_file = \
             [join(mdir, m, 'best.tar') for m in ['vae', 'mdrnn', 'ctrl']]
-
-        if not exists(vae_file) and exists(rnn_file):
-            logger.info("Either vae or mdrnn is untrained.")
-            raise AssertionError
-        # assert exists(vae_file) and exists(rnn_file),\
-        #     "Either vae or mdrnn is untrained."
-
-        logger.info(f"loading vae and rnn on device {device}")
-
-        vae_state, rnn_state = None, None
-        while vae_state is None:
-            try:
-                logger.info("loading vae")
-                # def mymaplocation(storage, location):
-                #     logger.info(f"location:{location}")
-                #     return str(device)
-                vae_state = torch.load(vae_file, map_location=device)
-                # vae_state = torch.load(vae_file, map_location=mymaplocation)
-                # logger.info("loading rnn")
-                # rnn_state = torch.load(rnn_file, map_location=device)
-            except RuntimeError:
-                logger.info("Oh no, it does not work, lets sleep for a while")
-                sleep(1)
-                continue
-            except Exception:
-                logger.info("wat ?")
-                logger.error(f"Fatal error in Rollout", exc_info=True)
-        while rnn_state is None:
-            try:
-                # logger.info("loading vae")
-                # def mymaplocation(storage, location):
-                #     logger.info(f"location:{location}")
-                #     return str(device)
-                # vae_state = torch.load(vae_file, map_location=device)
-                # vae_state = torch.load(vae_file, map_location=mymaplocation)
-                logger.info("loading rnn")
-                rnn_state = torch.load(rnn_file, map_location=device)
-            except RuntimeError:
-                logger.info("Oh no, it does not work, lets sleep for a while")
-                sleep(1)
-                continue
-            except Exception:
-                logger.info("wat ?")
-                logger.error(f"Fatal error in Rollout", exc_info=True)
-
-
-        logger.info("loading ok")
-
-        for m, s in (('VAE', vae_state), ('MDRNN', rnn_state)):
-            logger.info("Loading {} at epoch {} "
-                  "with test loss {}".format(
-                      m, s['epoch'], s['precision']))
-
-        self.vae = VAE(3, LSIZE).to(device)
+        
+        assert exists(vae_file)
+        vae_state = torch.load(vae_file, map_location=device)
+        logger.info(f"Loading VAE at epoch {vae_state['epoch']} with test loss {vae_state['precision']}")
         self.vae.load_state_dict(vae_state['state_dict'])
 
-        self.mdrnn = MDRNNCell(LSIZE, ASIZE, RSIZE, 5).to(device)
+        assert exists(rnn_file)
+
+        rnn_state = torch.load(rnn_file, map_location=device)
+        logger.info(f"Loading RNN at epoch {rnn_state['epoch']} with test loss {rnn_state['precision']}")
         self.mdrnn.load_state_dict(
             {k.strip('_l0'): v for k, v in rnn_state['state_dict'].items()})
-
-        self.controller = Controller(LSIZE, RSIZE, ASIZE).to(device)
 
         # load controller if it was previously saved
         if exists(ctrl_file):
             ctrl_state = torch.load(ctrl_file, map_location={'cuda:0': str(device)})
-            logger.info("Loading Controller with reward {}".format(
-                ctrl_state['reward']))
+            logger.info(f"Loading Controller with reward {ctrl_state['reward']}")
             self.controller.load_state_dict(ctrl_state['state_dict'])
 
         self.env = gym.make('CarRacing-v0')
         self.device = device
         self.logger = logger
         self.time_limit = time_limit
+        logger.info("End of init")
 
     def get_action_and_transition(self, obs, hidden):
         """ Get action and transition.
@@ -203,7 +159,7 @@ class RolloutGenerator(object):
         _, _, _, _, _, next_hidden = self.mdrnn(action, latent_mu, hidden)
         return action.squeeze().cpu().numpy(), next_hidden
 
-    def rollout(self, params, render=False):
+    def rollout(self, params, render=False, rollout_filename=None):
         """ Execute a rollout and returns minus cumulative reward.
 
         Load :params: into the controller and execute a single rollout. This
@@ -214,6 +170,12 @@ class RolloutGenerator(object):
         :returns: minus cumulative reward
         """
         # copy params into the controller
+        self.logger.info(f"rollout_filename:{rollout_filename}")
+        if rollout_filename is not None:
+            obs_rollout = []
+            r_rollout = []
+            a_rollout = []
+            d_rollout = []
         logger = self.logger
         if params is not None:
             load_parameters(params, self.controller)
@@ -238,14 +200,64 @@ class RolloutGenerator(object):
             obs = transform(obs).unsqueeze(0).to(self.device)
             action, hidden = self.get_action_and_transition(obs, hidden)
             obs, reward, done, _ = self.env.step(action)
+            if rollout_filename is not None:
+                self.env.env.viewer.window.dispatch_events()
+                obs_rollout.append(obs)
+                r_rollout.append(reward)
+                a_rollout.append(action)
+                d_rollout.append(done)
 
             if render:
                 self.env.render()
 
             cumulative += reward
             if done or i > self.time_limit:
+
+                if rollout_filename is not None:
+                    np.savez(rollout_filename,
+                         observations=np.array(obs_rollout),
+                         rewards=np.array(r_rollout),
+                         actions=np.array(a_rollout),
+                         terminals=np.array(d_rollout))
                 return - cumulative
             i += 1
         logger.info("End loop")
 
 
+def generate_data(rollouts, data_dir, noise_type): # pylint: disable=R0914
+    """ Generates data """
+    assert exists(data_dir), "The data directory does not exist..."
+
+    env = gym.make("CarRacing-v0")
+    seq_len = 1000
+
+    for i in range(rollouts):
+        env.reset()
+        env.env.viewer.window.dispatch_events()
+        if noise_type == 'white':
+            a_rollout = [env.action_space.sample() for _ in range(seq_len)]
+        elif noise_type == 'brown':
+            a_rollout = sample_continuous_policy(env.action_space, seq_len, 1. / 50)
+
+        s_rollout = []
+        r_rollout = []
+        d_rollout = []
+
+        t = 0
+        while True:
+            action = a_rollout[t]
+            t += 1
+
+            s, r, done, _ = env.step(action)
+            env.env.viewer.window.dispatch_events()
+            s_rollout += [s]
+            r_rollout += [r]
+            d_rollout += [done]
+            if done:
+                print("> End of rollout {}, {} frames...".format(i, len(s_rollout)))
+                np.savez(join(data_dir, 'rollout_{}'.format(i)),
+                         observations=np.array(s_rollout),
+                         rewards=np.array(r_rollout),
+                         actions=np.array(a_rollout),
+                         terminals=np.array(d_rollout))
+                break

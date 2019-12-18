@@ -6,7 +6,6 @@ from os import mkdir
 import torch
 import torch.utils.data
 from torch import optim
-from torch.nn import functional as F
 from torchvision import transforms
 from torchvision.utils import save_image
 
@@ -20,7 +19,6 @@ from utils.learning import ReduceLROnPlateau
 from data.loaders import RolloutObservationDataset
 
 
-import ipdb
 
 parser = argparse.ArgumentParser(description='VAE Trainer')
 parser.add_argument('--batch-size', type=int, default=32, metavar='N',
@@ -32,6 +30,8 @@ parser.add_argument('--noreload', action='store_true',
                     help='Best model is not reloaded if specified')
 parser.add_argument('--nosamples', action='store_true',
                     help='Does not save samples during training if specified')
+parser.add_argument('--dataset_dir', type=str, help='rollouts location', 
+                    default='datasets/carracing')
 
 
 args = parser.parse_args()
@@ -58,9 +58,9 @@ transform_test = transforms.Compose([
     transforms.ToTensor(),
 ])
 
-dataset_train = RolloutObservationDataset('datasets/carracing',
+dataset_train = RolloutObservationDataset(args.dataset_dir,
                                           transform_train, train=True)
-dataset_test = RolloutObservationDataset('datasets/carracing',
+dataset_test = RolloutObservationDataset(args.dataset_dir,
                                          transform_test, train=False)
 train_loader = torch.utils.data.DataLoader(
     dataset_train, batch_size=args.batch_size, shuffle=True, num_workers=2)
@@ -72,7 +72,7 @@ model = VAE(3, LSIZE).to(device)
 optimizer = optim.Adam(model.parameters())#, lr=1e-4, betas=(0.5, 0.9))
 # optimizer = optim.SGD(model.parameters(), lr=1e-3)
 scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=5)
-earlystopping = EarlyStopping('min', patience=30)
+earlystopping = EarlyStopping('min', patience=3)
 
 # Reconstruction + KL divergence losses summed over all elements and batch
 def loss_function(recon_x, x, mu, logsigma):
@@ -111,11 +111,11 @@ def train(epoch):
         optimizer.step()
         train_loss += loss.item()
         
-        if batch_idx % 20 == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_idx * len(data), len(train_loader.dataset),
-                100. * batch_idx / len(train_loader),
-                loss.item() / len(data)))
+        # if batch_idx % 200 == 0:
+        #     print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+        #         epoch, batch_idx * len(data), len(train_loader.dataset),
+        #         100. * batch_idx / len(train_loader),
+        #         loss.item() / len(data)))
 
     print('====> Epoch: {} Average loss: {:.4f}'.format(
         epoch, train_loss / len(train_loader.dataset)))

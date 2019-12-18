@@ -13,13 +13,14 @@ parser.add_argument('--threads', type=int, help="Number of threads")
 parser.add_argument('--rootdir', type=str, help="Directory to store rollout "
                     "directories of each thread")
 parser.add_argument('--policy', type=str, choices=['brown', 'white'],
-                    help="Directory to store rollout directories of each thread",
+                    help="",
                     default='brown')
 parser.add_argument('--logdir', type=str)
 args = parser.parse_args()
 
 rpt = args.rollouts // args.threads + 1
 
+print("test")
 def _threaded_generation(i):
     tdir = join(args.rootdir, 'thread_{}'.format(i))
     makedirs(tdir, exist_ok=True)

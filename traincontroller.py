@@ -8,20 +8,23 @@ to process a queue filled with parameters to be evaluated.
 import argparse
 import sys
 from os.path import join, exists
-from os import mkdir, unlink, listdir, getpid
+from os import mkdir, unlink, listdir, getpid, kill
 from time import sleep
+import signal
 import torch
+import pickle as pkl
 
 import cma
-from models import Controller
+from models import MDRNNCell, VAE, Controller
+
 from tqdm import tqdm
 import numpy as np
 from utils.misc import RolloutGenerator, ASIZE, RSIZE, LSIZE
-from utils.misc import load_parameters
+from utils.misc import load_parameters, save_checkpoint
 from utils.misc import flatten_parameters
+from utils.history import History
 
 import logging
-
 
 
 
@@ -64,88 +67,20 @@ def slave_routine(p_queue, r_queue, e_queue, p_index, logdir):
     logger.setLevel(logging.INFO)
     logger.addHandler(handler)
 
-    logger.info(f"Initialiazing cuda with {torch.cuda.device_count()} gpus")
     gpu = p_index % torch.cuda.device_count()
     device = torch.device('cuda:{}'.format(gpu) if torch.cuda.is_available() else 'cpu')
-    logger.info("Initialiazing cuda Done")
     try:
         with torch.no_grad():
             time_limit = 1000
             r_gen = RolloutGenerator(logdir, device, time_limit, logger)
-            logger.info("Starting the loop!")
             while e_queue.empty():
                 if p_queue.empty():
                     sleep(.1)
                 else:
-                    logger.info("Queue is not empty")
                     s_id, params = p_queue.get()
-                    logger.info("Got stuff from the queue, computing X")
-                    X = r_gen.rollout(params)
-                    logger.info("Putting X in the queue")
-                    r_queue.put((s_id, X))
-                    logger.info("X is in the queue")
+                    r_queue.put((s_id, r_gen.rollout(params)))
     except Exception:
         logger.error(f"Fatal error in process {p_index}", exc_info=True)
-
-
-# def mpify(target, num_workers, nruns, parameters, args_target, logger, margin=2, display=False):
-#     p_queue = mp.Queue()
-#     r_queue = mp.Queue()
-#     e_queue = mp.Queue()
-
-#     # torch.multiprocessing.spawn(fn=slave_routine, args=(p_queue, r_queue, e_queue), 
-#     #     nprocs=num_workers, join=False)
-#     process_list = []
-#     for p_index in range(num_workers):
-#         p = mp.Process(target=slave_routine, args=(p_queue, r_queue, e_queue, p_index, *args_target))
-#         process_list.append(p)
-#         p.start()
-#         # mp.Process(target=slave_routine, args=(p_queue, r_queue, e_queue, p_index, *args_target)).start()
-
-
-
-#     results = [[] for _ in parameters]
-#     for s_id, s in enumerate(parameters):
-#         for _ in range(n_samples + margin):
-#             p_queue.put((s_id, s))
-    
-
-#     if display:
-#         pbar = tqdm(total=len(parameters) * nruns)
-
-#     count = 0
-#     while any(len(r_list) < nruns for r_list in results):
-#         if p_queue.empty():
-#             for idx, p in sorted(enumerate(parameters), key= lambda idx_p: len(results[idx_p[0]])):
-#                 if len(results[idx]) >= nruns:
-#                     break
-#                 p_queue.put((s_id, s))
-
-#         # for t in range(pop_size * n_samples):
-#         # logger.info(f"{count}/{len(parameters) * nruns}")
-#         while r_queue.empty():
-#             sleep(.1)
-#         r_s_id, r = r_queue.get()
-
-#         if len(results[r_s_id]) < nruns:
-#             results[r_s_id].append(r)
-#             if args.display:
-#                 pbar.update(1)
-#             count += 1
-        
-#     e_queue.put('EOP')
-#     sleep(1.)
-#     for p in process_list:
-#         p.terminate()            
-
-#     if args.display:
-#         pbar.close()
-
-#     return results
-
-        
-    
-
 
 
 ################################################################################
@@ -162,15 +97,6 @@ def evaluate(param, rollouts, p_queue, r_queue):
 
     :returns: minus averaged cumulated reward
     """
-    mainlogger.info("Evaluating...")
-    # index_min = np.argmin(results)
-    # best_guess = solutions[index_min]
-    # results = mpify(target=slave_routine, num_workers=args.max_workers, nruns=rollouts, 
-    #     parameters=[param], args_target=(args.logdir,), logger=mainlogger, 
-    #     display=args.display)
-    
-    # assert len(results) == 1
-    # results = np.array(results[0])
 
     results = []
 
@@ -186,7 +112,41 @@ def evaluate(param, rollouts, p_queue, r_queue):
     return np.mean(results), np.std(results)
 
 
+def init_random_models():
+    cuda = torch.cuda.is_available()
+
+    device = torch.device("cuda" if cuda else "cpu")
+
+    vae = VAE(3, LSIZE).to(device)
+    mdrnn = MDRNNCell(LSIZE, ASIZE, RSIZE, 5).to(device)
+
+    for (model, dirname) in [(vae, 'vae'), (mdrnn, 'mdrnn')]:
+        
+        best_filename = join(args.logdir, dirname, 'best.tar')
+        if exists(best_filename):
+            continue
+        print(f"reinitilizing {dirname}")
+        if not exists(join(args.logdir, dirname)):
+            mkdir(join(args.logdir, dirname))
+
+        filename = join(args.logdir, dirname, 'checkpoint.tar')
+        checkpoint = {'epoch': 0, 'state_dict': model.state_dict()}
+        if dirname in ['vae', 'mdrnn']:
+            checkpoint['precision'] = np.inf
+        else:
+            checkpoint['reward'] = -np.inf
+        save_checkpoint(checkpoint, True, filename, best_filename)
+    
+        
+
+
+
+
 def main():
+    ################################################################################
+    # Initialization of the random models
+    init_random_models()
+
     ################################################################################
     #                Define queues and start workers                               #
     ################################################################################
@@ -194,12 +154,12 @@ def main():
     r_queue = mp.Queue()
     e_queue = mp.Queue()
 
-    # torch.multiprocessing.spawn(fn=slave_routine, args=(p_queue, r_queue, e_queue), 
-    #     nprocs=num_workers, join=False)
+    p_list = []
+    
     for p_index in range(num_workers):
-        mp.Process(target=slave_routine, args=(p_queue, r_queue, e_queue, p_index, args.logdir)).start()
+        p_list.append(mp.Process(target=slave_routine, args=(p_queue, r_queue, e_queue, p_index, args.logdir)).start())
 
-
+    
     ################################################################################
     #                           Launch CMA                                         #
     ################################################################################
@@ -207,24 +167,30 @@ def main():
 
     # define current best and load parameters
     cur_best = None
-    ctrl_file = join(ctrl_dir, 'best.tar')
+    best_ctrl_file = join(ctrl_dir, 'best.tar')
+    last_ctrl_file = join(ctrl_dir, 'last.tar')
+    cma_file = join(ctrl_dir, 'cma.pkl')
     mainlogger.info("Attempting to load previous best...")
-    if exists(ctrl_file):
-        state = torch.load(ctrl_file, map_location={'cuda:0': 'cpu'})
+    epoch = 0
+    if not args.noreload and exists(last_ctrl_file):
+        state = torch.load(last_ctrl_file, map_location={'cuda:0': 'cpu'})
         cur_best = - state['reward']
+        epoch = state["epoch"] + 1
         controller.load_state_dict(state['state_dict'])
         mainlogger.info("Previous best was {}...".format(-cur_best))
+        history.cut(epoch)
 
-    parameters = controller.parameters()
-    es = cma.CMAEvolutionStrategy(flatten_parameters(parameters), 0.1,
-                                  {'popsize': pop_size})
+        with open(cma_file, 'rb') as f:
+            es = pkl.load(f)
 
-    epoch = 0
+    else:
+        es = cma.CMAEvolutionStrategy(flatten_parameters(controller.parameters()), 0.1,
+                                      {'popsize': pop_size})
+
     log_step = 1
-    mainlogger.info("Beginning of training")
-    while not es.stop():
+    while not es.stop() and epoch < args.max_epoch:
         if cur_best is not None and - cur_best > args.target_return:
-            mainlogger.info("Already better than target, breaking...")
+            mainlogger.info("Already better than target, ointing...")
             break
 
 
@@ -232,14 +198,9 @@ def main():
         mainlogger.info("Ask CMA")
         solutions = es.ask()
 
-
-        # results = mpify(target=slave_routine, num_workers=args.max_workers, nruns=n_samples, 
-        #     parameters=solutions, args_target=(args.logdir,), logger=mainlogger, 
-        #     display=args.display)
-        # push parameters to queue
         mainlogger.info("Put in the queue")
         for s_id, s in enumerate(solutions):
-            for _ in range(n_samples + 2):
+            for _ in range(n_samples):
                 p_queue.put((s_id, s))
 
         # retrieve results
@@ -257,17 +218,29 @@ def main():
             pbar.close()
         mainlogger.info("Training completed. Now, CMA.")
 
-        # r_list = [np.mean(r) for r in results]
+
+        history.push("Return", epoch, r_list)
+
         es.tell(solutions, r_list)
         es.disp()
 
         # evaluation and saving
         if epoch % log_step == log_step - 1:
-            
+            history.dump()
             _, best_params = min(enumerate(solutions), key=lambda idx_p: r_list[idx_p[0]])
-            best, std_best = evaluate(best_params, 100)
+            best, std_best = evaluate(best_params, 100, p_queue, r_queue)
 
             mainlogger.info("Current evaluation: {}".format(best))
+
+
+            torch.save(
+                {'epoch': epoch,
+                 'reward': - best,
+                 'state_dict': controller.state_dict()},
+                last_ctrl_file)
+            with open(cma_file, 'wb') as f:
+                pkl.dump(es, f)
+
             if not cur_best or cur_best > best:
                 cur_best = best
                 mainlogger.info("Saving new best with value {}+-{}...".format(-cur_best, std_best))
@@ -276,14 +249,27 @@ def main():
                     {'epoch': epoch,
                      'reward': - cur_best,
                      'state_dict': controller.state_dict()},
-                    join(ctrl_dir, 'best.tar'))
+                    best_ctrl_file)
             
 
 
         epoch += 1
         mainlogger.info("End of loop")
+
+    for p in mp.active_children():
+        kill(p.pid, signal.SIGKILL)
+
+    print("end of killings")
+
+
+    while len(mp.active_children()) == 0:#any(p.is_alive() for p in p_list if p is not None):
+        sleep(1.)
+    print("end of while loop")
+
+
     es.result_pretty()
     
+
 
 
 
@@ -302,12 +288,21 @@ if __name__ == '__main__':
                         "specified.")
     parser.add_argument('--max-workers', type=int, help='Maximum number of workers.',
                         default=32)
+    parser.add_argument('--noreload', action='store_true',
+                help='Restart from scratch for the controller')
+    parser.add_argument('--random-rnn', action='store_true',
+                help='Do not load a trained RNN but use a random one')
+    parser.add_argument('--random-vae', action='store_true',
+                help='Do not load the trained RNN VAE but use a random one')
+    parser.add_argument('--max_epoch', type=int, default=1000000)
     args = parser.parse_args()
 
-    args.logdir = "/private/home/leonardb/code/world-models/exp_dir"
-    # Max number of workers. M
-
-    
+    if args.random_rnn and args.random_vae:
+        subdir = 'untrainedrnnvae'
+    elif args.random_rnn and not args.random_vae:
+        subdir = 'untrainedrnn'
+    else:
+        subdir = 'standard'
 
 
     # multiprocessing variables
@@ -325,10 +320,15 @@ if __name__ == '__main__':
         for fname in listdir(tmp_dir):
             unlink(join(tmp_dir, fname))
 
+
+
+
+
     # create ctrl dir if non exitent
     ctrl_dir = join(args.logdir, 'ctrl')
     if not exists(ctrl_dir):
         mkdir(ctrl_dir)
+    history = History(join(ctrl_dir, 'history.pkl'))
 
     handler = logging.FileHandler(join(tmp_dir, 'mainlogger.out'))        
     mainlogger = logging.getLogger('main_'+str(getpid()))

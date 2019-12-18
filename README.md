@@ -46,14 +46,29 @@ The MDN-RNN is trained using the `trainmdrnn.py` file, e.g.
 python trainmdrnn.py --logdir exp_dir
 ```
 A VAE must have been trained in the same `exp_dir` for this script to work.
-### 4. Training and testing the Controller
+### 4. Training the Controller
 Finally, the controller is trained using CMA-ES, e.g.
 ```bash
-python traincontroller.py --logdir exp_dir --n-samples 4 --pop-size 4 --target-return 950 --display
+python traincontroller.py --logdir exp_dir --n-samples 16 --pop-size 64 --target-return 950 --display
 ```
+
+### 5. Testing the controller
+
 You can test the obtained policy with `test_controller.py` e.g.
 ```bash
-python test_controller.py --logdir exp_dir
+python eval_controller.py --logdir exp_dir --display
+```
+
+To test the pre-trained models available, run the following commands:
+```bash
+python eval_controller.py --logdir ../data/exp_dir/standard --display
+python eval_controller.py --logdir ../data/exp_dir/untrainedrnn --display
+python eval_controller.py --logdir ../data/exp_dir/untrainedrnnvae --display
+```
+
+To plot the learning curves presented in the article, run the following command:
+```bash
+python dataanalysis.py  --experiments-folder ../data/exp_dir --experiments-names standard untrainedrnn untrainedrnnvae --out out.png
 ```
 
 ### Notes
@@ -82,3 +97,17 @@ all gpus specified by `CUDA_VISIBLE_DEVICES`.
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details
+
+
+## Platform information
+```bash
+OS: Ubuntu 18.04.1 LTS
+Python: 3.7.2 (default, Dec 29 2018, 06:19:36)
+[GCC 7.3.0]
+Machine and architecture x86_64 64bit
+NumPy: 1.15.4
+SciPy: 1.2.0
+matplotlib: 3.0.2
+PyTorch version: 1.0.0
+CUDA runtime version: 10.0.130
+```
