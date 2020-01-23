@@ -203,6 +203,7 @@ for e in range(epochs):
     cur_best = None
     train(e)
     test_loss = test(e)
+    assert np.isfinite(test_loss)
     scheduler.step(test_loss)
     earlystopping.step(test_loss)
 

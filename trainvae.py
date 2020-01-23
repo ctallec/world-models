@@ -2,6 +2,7 @@
 import argparse
 from os.path import join, exists
 from os import mkdir
+import numpy as np
 
 import torch
 import torch.utils.data
@@ -160,6 +161,8 @@ cur_best = None
 for epoch in range(1, args.epochs + 1):
     train(epoch)
     test_loss = test()
+    assert np.isfinite(test_loss)
+
     scheduler.step(test_loss)
     earlystopping.step(test_loss)
 

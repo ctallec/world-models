@@ -80,25 +80,30 @@ def main(logdir, total_epochs=200, period_restart=5, max_workers=32):
 
         # dataset_dir = '~/data/carracing'
         # if step != 0:
-            
-        script += "\n echo GEN DATASET \n"
+        script += f"######################\n"
+        script += f"echo STEP {step}\n"
+        script += "echo GEN DATASET\n"
         script += gen_dataset(logdir, max_workers=max_workers, 
                               dataset_dir=dataset_dir, random=first_step)
         script += "\n"
         ## Then train the Vae
-        script += "\n echo TRAIN VAE \n"
-        script += trainvae(logdir, dataset_dir=dataset_dir, noreload=first_step)
+        script += "echo TRAIN VAE\n"
+        script += trainvae(logdir, dataset_dir=dataset_dir, noreload=first_step, nosamples=True)
         script += "\n"
         # Then the Mdrnn
-        script += "\n echo TRAIN MDRNN \n"
+        script += "echo TRAIN MDRNN\n"
         script += trainmdrnn(logdir, dataset_dir=dataset_dir, noreload=first_step)
         script += "\n"
         # Finally the controler 
-        script += "\n echo TRAIN CONTROLLER \n"
+        script += "echo TRAIN CONTROLLER\n"
         script += traincontroller(logdir, max_workers=max_workers, 
                                   max_epoch=(step+1) * period_restart,
                                   noreload=first_step)
+
         script += "\n"
+        script += f"cp -r {logdir} {logdir}_step{step}\n"
+
+
     print(script)
 
 if __name__ == "__main__":

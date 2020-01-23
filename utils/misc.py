@@ -221,7 +221,7 @@ class RolloutGenerator(object):
                          terminals=np.array(d_rollout))
                 return - cumulative
             i += 1
-        logger.info("End loop")
+        logger.info(f"End loop: {i}")
 
 
 def generate_data(rollouts, data_dir, noise_type): # pylint: disable=R0914
