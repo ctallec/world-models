@@ -4,6 +4,8 @@ with CMAES.
 
 This is a bit complex. num_workers slave threads are launched
 to process a queue filled with parameters to be evaluated.
+
+Code taken from this repo: https://github.com/ctallec/world-models
 """
 import argparse
 import sys
