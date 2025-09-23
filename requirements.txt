@@ -1,6 +1,7 @@
 cma
 argparse
-gym[all]
-box2d
+gymnasium[box2d]>=0.29
 tqdm
 numpy
+torch>=2.1
+torchvision>=0.16
