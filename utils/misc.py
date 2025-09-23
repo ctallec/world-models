@@ -5,11 +5,11 @@ import torch
 from torchvision import transforms
 import numpy as np
 from models import MDRNNCell, VAE, Controller
-import gym
-import gym.envs.box2d
+import gymnasium as gym
+from gymnasium.envs.box2d import car_racing
 
 # A bit dirty: manually change size of car racing env
-gym.envs.box2d.car_racing.STATE_W, gym.envs.box2d.car_racing.STATE_H = 64, 64
+car_racing.STATE_W, car_racing.STATE_H = 64, 64
 
 # Hardcoded for now
 ASIZE, LSIZE, RSIZE, RED_SIZE, SIZE =\
@@ -99,7 +99,7 @@ class RolloutGenerator(object):
     :attr mdrnn: MDRNN model loaded from mdir/mdrnn
     :attr controller: Controller, either loaded from mdir/ctrl or randomly
         initialized
-    :attr env: instance of the CarRacing-v0 gym environment
+    :attr env: instance of the CarRacing-v3 gym environment
     :attr device: device used to run VAE, MDRNN and Controller
     :attr time_limit: rollouts have a maximum of time_limit timesteps
     """
@@ -132,12 +132,12 @@ class RolloutGenerator(object):
 
         # load controller if it was previously saved
         if exists(ctrl_file):
-            ctrl_state = torch.load(ctrl_file, map_location={'cuda:0': str(device)})
+            ctrl_state = torch.load(ctrl_file, map_location={'cuda:0': str(device)},weights_only=False)
             print("Loading Controller with reward {}".format(
                 ctrl_state['reward']))
             self.controller.load_state_dict(ctrl_state['state_dict'])
 
-        self.env = gym.make('CarRacing-v0')
+        self.env = gym.make('CarRacing-v3', render_mode='rgb_array')
         self.device = device
 
         self.time_limit = time_limit
@@ -175,7 +175,7 @@ class RolloutGenerator(object):
         if params is not None:
             load_parameters(params, self.controller)
 
-        obs = self.env.reset()
+        obs, _ = self.env.reset()
 
         # This first render is required !
         self.env.render()
@@ -184,17 +184,19 @@ class RolloutGenerator(object):
             torch.zeros(1, RSIZE).to(self.device)
             for _ in range(2)]
 
-        cumulative = 0
+        cumulative = 0.0
         i = 0
         while True:
-            obs = transform(obs).unsqueeze(0).to(self.device)
-            action, hidden = self.get_action_and_transition(obs, hidden)
-            obs, reward, done, _ = self.env.step(action)
+            obs_tensor = transform(obs).unsqueeze(0).to(self.device)
+            action, hidden = self.get_action_and_transition(obs_tensor, hidden)
+            next_obs, reward, terminated, truncated, _ = self.env.step(action)
+            done = terminated or truncated
 
             if render:
                 self.env.render()
 
             cumulative += reward
+            obs = next_obs
             if done or i > self.time_limit:
                 return - cumulative
             i += 1

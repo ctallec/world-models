@@ -12,8 +12,7 @@ from tqdm import tqdm
 from utils.misc import save_checkpoint
 from utils.misc import ASIZE, LSIZE, RSIZE, RED_SIZE, SIZE
 from utils.learning import EarlyStopping
-## WARNING : THIS SHOULD BE REPLACED WITH PYTORCH 0.5
-from utils.learning import ReduceLROnPlateau
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from data.loaders import RolloutSequenceDataset
 from models.vae import VAE
@@ -72,39 +71,56 @@ if exists(rnn_file) and not args.noreload:
 
 
 # Data Loading
-transform = transforms.Lambda(
-    lambda x: np.transpose(x, (0, 3, 1, 2)) / 255)
+transform = transforms.Lambda(lambda x: np.transpose(x, (0,3,1,2)).astype(np.float32) / 255.0)
+
 train_loader = DataLoader(
     RolloutSequenceDataset('datasets/carracing', SEQ_LEN, transform, buffer_size=30),
-    batch_size=BSIZE, num_workers=8, shuffle=True)
+    batch_size=BSIZE, num_workers=8, shuffle=True,  drop_last=True)
 test_loader = DataLoader(
     RolloutSequenceDataset('datasets/carracing', SEQ_LEN, transform, train=False, buffer_size=10),
-    batch_size=BSIZE, num_workers=8)
+    batch_size=BSIZE, num_workers=8, drop_last=True)
 
 def to_latent(obs, next_obs):
-    """ Transform observations to latent space.
-
-    :args obs: 5D torch tensor (BSIZE, SEQ_LEN, ASIZE, SIZE, SIZE)
-    :args next_obs: 5D torch tensor (BSIZE, SEQ_LEN, ASIZE, SIZE, SIZE)
-
-    :returns: (latent_obs, latent_next_obs)
-        - latent_obs: 4D torch tensor (BSIZE, SEQ_LEN, LSIZE)
-        - next_latent_obs: 4D torch tensor (BSIZE, SEQ_LEN, LSIZE)
+    """
+    obs, next_obs: (B, T, C, H, W), values in [0,1] (your transform already divides by 255)
+    Returns: latent_obs, latent_next_obs: (B, T, LSIZE)
     """
     with torch.no_grad():
-        obs, next_obs = [
-            f.upsample(x.view(-1, 3, SIZE, SIZE), size=RED_SIZE,
-                       mode='bilinear', align_corners=True)
-            for x in (obs, next_obs)]
+        B, T, C, H, W = obs.shape
 
-        (obs_mu, obs_logsigma), (next_obs_mu, next_obs_logsigma) = [
-            vae(x)[1:] for x in (obs, next_obs)]
+        # If VAE expects 3 channels, adapt here.
+        # Option A: if C==3, great. Use as-is.
+        # Option B: if C==1, repeat to 3 channels.
+        # Option C: if C>3 (e.g., stacked), pick 3 channels (first 3 shown here; adjust to your data).
+        if C == 3:
+            obs3, next3 = obs, next_obs
+        elif C == 1:
+            obs3      = obs.repeat(1, 1, 3, 1, 1)
+            next3     = next_obs.repeat(1, 1, 3, 1, 1)
+        else:
+            # choose which 3 to use; could also learn a 1x1 conv mapper
+            obs3      = obs[:, :, :3, :, :]
+            next3     = next_obs[:, :, :3, :, :]
 
-        latent_obs, latent_next_obs = [
-            (x_mu + x_logsigma.exp() * torch.randn_like(x_mu)).view(BSIZE, SEQ_LEN, LSIZE)
-            for x_mu, x_logsigma in
-            [(obs_mu, obs_logsigma), (next_obs_mu, next_obs_logsigma)]]
-    return latent_obs, latent_next_obs
+        # Flatten (B, T) → N rows, keep dynamic H, W
+        x_obs  = obs3.reshape(-1, 3, H, W).contiguous()
+        x_nobs = next3.reshape(-1, 3, H, W).contiguous()
+
+        # Resize to exactly what the VAE was trained on
+        x_obs  = f.interpolate(x_obs,  size=RED_SIZE, mode='bilinear', align_corners=True)
+        x_nobs = f.interpolate(x_nobs, size=RED_SIZE, mode='bilinear', align_corners=True)
+
+        # VAE forward returns (recon, (mu, logsigma)); you use the latter
+        (obs_mu, obs_logsigma), (next_mu, next_logsigma) = [vae(x)[1:] for x in (x_obs, x_nobs)]
+
+        # Sanity: VAE should output one latent per input row → N == B*T
+        assert obs_mu.shape[0] == B*T, f"VAE batch mismatch: got {obs_mu.shape[0]} vs expected {B*T}"
+
+        # Reparameterization per frame, then reshape back to (B, T, LSIZE)
+        latent_obs  = (obs_mu  + obs_logsigma.exp()  * torch.randn_like(obs_mu)).reshape(B, T, LSIZE)
+        latent_next = (next_mu + next_logsigma.exp() * torch.randn_like(next_mu)).reshape(B, T, LSIZE)
+
+    return latent_obs, latent_next
 
 def get_loss(latent_obs, action, reward, terminal,
              latent_next_obs, include_reward: bool):
@@ -163,7 +179,8 @@ def data_pass(epoch, train, include_reward): # pylint: disable=too-many-locals
     pbar = tqdm(total=len(loader.dataset), desc="Epoch {}".format(epoch))
     for i, data in enumerate(loader):
         obs, action, reward, terminal, next_obs = [arr.to(device) for arr in data]
-
+        print("-------------------------------------",obs.shape)
+        print(next_obs.shape)
         # transform obs
         latent_obs, latent_next_obs = to_latent(obs, next_obs)
 

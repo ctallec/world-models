@@ -31,19 +31,10 @@ def gmm_loss(batch, mus, sigmas, logpi, reduce=True): # pylint: disable=too-many
     with fs).
     """
     batch = batch.unsqueeze(-2)
-    normal_dist = Normal(mus, sigmas)
-    g_log_probs = normal_dist.log_prob(batch)
-    g_log_probs = logpi + torch.sum(g_log_probs, dim=-1)
-    max_log_probs = torch.max(g_log_probs, dim=-1, keepdim=True)[0]
-    g_log_probs = g_log_probs - max_log_probs
-
-    g_probs = torch.exp(g_log_probs)
-    probs = torch.sum(g_probs, dim=-1)
-
-    log_prob = max_log_probs.squeeze() + torch.log(probs)
-    if reduce:
-        return - torch.mean(log_prob)
-    return - log_prob
+    sigmas = sigmas.clamp_min(1e-6)
+    comp_log_prob = Normal(mus, sigmas).log_prob(batch).sum(dim=-1)
+    log_prob = torch.logsumexp(logpi + comp_log_prob, dim=-1)
+    return -log_prob.mean() if reduce else -log_prob
 
 class _MDRNNBase(nn.Module):
     def __init__(self, latents, actions, hiddens, gaussians):
@@ -93,7 +84,7 @@ class MDRNN(_MDRNNBase):
 
         sigmas = gmm_outs[:, :, stride:2 * stride]
         sigmas = sigmas.view(seq_len, bs, self.gaussians, self.latents)
-        sigmas = torch.exp(sigmas)
+        sigmas = f.softplus(sigmas) + 1e-6
 
         pi = gmm_outs[:, :, 2 * stride: 2 * stride + self.gaussians]
         pi = pi.view(seq_len, bs, self.gaussians)
@@ -141,7 +132,7 @@ class MDRNNCell(_MDRNNBase):
 
         sigmas = out_full[:, stride:2 * stride]
         sigmas = sigmas.view(-1, self.gaussians, self.latents)
-        sigmas = torch.exp(sigmas)
+        sigmas = f.softplus(sigmas) + 1e-6
 
         pi = out_full[:, 2 * stride:2 * stride + self.gaussians]
         pi = pi.view(-1, self.gaussians)
